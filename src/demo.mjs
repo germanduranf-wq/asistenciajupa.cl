@@ -1,6 +1,6 @@
 import { today, addDays, CATEGORIES } from './domain.mjs';
 export function createDemo() {
-  const classes = ['Templo matriz', 'San Carlos', 'Caro Urzúa', 'Creta Norte', 'Local de ejemplo A', 'Local de ejemplo B'].map((name, i) => ({
+  const classes = ['Templo matriz', 'San Carlos', 'Carol Urzúa', 'Creta Norte', 'Las Brisas', 'San Guillermo'].map((name, i) => ({
     id: `c${i}`,
     name,
     kind: i === 0 ? 'Templo matriz' : i > 3 ? 'Local' : 'Clase',
