@@ -304,7 +304,7 @@ export async function manageUser(values) {
     writeDemo(d);
     return;
   }
-  const r = await supabase.functions.invoke('manage-users', {
+ const r = await supabase.functions.invoke('super-responder', {
     body: values
   });
   if (r.error) {
