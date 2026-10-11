@@ -88,13 +88,13 @@ export function createDemo() {
     profiles: [{
       id: 'demo-admin',
       name: 'Administrador de prueba',
-      email: 'admin@ejemplo.cl',
+      username: 'admin',
       role: 'admin',
       active: true
     }, {
       id: 'demo-member',
       name: 'Encargado de prueba',
-      email: 'encargado@ejemplo.cl',
+      username: 'encargado',
       role: 'encargado',
       active: true
     }],
