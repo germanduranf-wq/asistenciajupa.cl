@@ -304,7 +304,7 @@ export async function manageUser(values) {
     writeDemo(d);
     return;
   }
- const r = await supabase.functions.invoke('super-responder', {
+  const r = await supabase.functions.invoke('super-responder', {
     body: values
   });
   if (r.error) {
@@ -314,6 +314,17 @@ export async function manageUser(values) {
       message = body.error || message;
     } catch {}
     throw Error(message);
+  }
+  if (r.data?.error) throw Error(r.data.error);
+  if (r.data?.ok !== true) {
+    throw Error('La función respondió, pero no confirmó la operación. Revisa que super-responder tenga el código completo de manage-users.');
+  }
+  if (values.action === 'create') {
+    if (typeof r.data.id !== 'string') throw Error('La función no devolvió el identificador de la cuenta creada. Revisa su código en Supabase.');
+    const created = result(await supabase.from('profiles').select('id,username').eq('id', r.data.id).maybeSingle());
+    if (!created || created.username !== values.username) {
+      throw Error('No se pudo verificar el perfil creado. Revisa Authentication y profiles en Supabase antes de volver a crear la cuenta.');
+    }
   }
   return r.data;
 }
