@@ -1,0 +1,6 @@
+project_id = "asistencia-jupa"
+
+[functions.manage-users]
+verify_jwt = false
+# La función valida el JWT con auth.getUser y comprueba el perfil admin activo.
+# Esto permite claves publicables y firmas JWT asimétricas actuales de Supabase.
