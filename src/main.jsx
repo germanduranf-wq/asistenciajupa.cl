@@ -211,7 +211,7 @@ function Login({
   recovery,
   onRecovered
 }) {
-  const [username, setusername] = useState(''),
+  const [username, setUsername] = useState(''),
     [password, setPassword] = useState(''),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
@@ -237,17 +237,7 @@ function Login({
       setBusy(false);
     }
   };
-  return <div className="login-page"><div className="login-art"><span className="login-kicker">JUVENTUD UNIDA DE PUENTE ALTO</span><div className="login-message"><div className="login-symbol"><Church size={54} strokeWidth={1} /></div><h1>Unidos en cada<br />encuentro.</h1><p>Un espacio para acompañar nuestras visitas,<br className="desktop" /> cuidar los detalles y seguir creciendo juntos.</p></div><span className="login-bottom">ASISTENCIA JUPA <span>·</span> PUENTE ALTO</span></div><div className="login-panel"><div className="login-card"><img className="login-logo" src="/logo-completo.webp" alt="JUPA · Juventud Unida de Puente Alto" /><div className="eyebrow">BIENVENIDO A TU ESPACIO</div><h2>{recovery ? 'Crea una nueva contraseña' : 'Cada visita cuenta.'}</h2><p className="muted">{recovery ? 'Utiliza al menos 12 caracteres.' : 'Ingresa para registrar y acompañar a nuestra juventud.'}</p><form onSubmit={submit}>{!recovery && <Field label="Usuario"><input type="text" value={username} onChange={e => setusername(e.target.value)} autoComplete="username" required placeholder="tu.correo@ejemplo.cl" disabled={!api.configured} /></Field>}<Field label={recovery ? 'Nueva contraseña' : 'Contraseña'}><input type="password" value={password} minLength={recovery ? 12 : undefined} onChange={e => setPassword(e.target.value)} autoComplete={recovery ? 'new-password' : 'current-password'} required placeholder="Tu contraseña" disabled={!api.configured} /></Field><Button className="button primary full" busy={busy || loading} disabled={!api.configured} type="submit">{recovery ? 'Guardar contraseña' : 'Ingresar'} <ArrowRight size={18} /></Button></form>{(error || localError) && <p role="alert" className="form-error">{localError || error}</p>}{message && <p role="status" className="info-line">{message}</p>}{api.configured && !recovery && <button className="text-button recovery" onClick={async () => {
-          if (!username) {
-            setLocalError('Solicita al administrador restablecer tu contraseña');
-            return;
-          }
-          setLocalError('');
-          const r = await api.supabase.auth.resetPasswordForusername(username, {
-            redirectTo: location.origin
-          });
-          if (r.error) setLocalError(r.error.message);else setMessage('Si tu cuenta existe, recibirás un correo para recuperar el acceso.');
-        }}>Olvidé mi contraseña</button>}{api.demoAllowed && !recovery && <div className="demo-entry"><span>CONOCE LA APLICACIÓN</span><button className="button secondary full" onClick={onDemo}>Explorar versión de prueba <ArrowUpRight size={17} /></button><small>Datos ficticios. Puedes probar los flujos sin afectar registros reales.</small></div>}<div className="login-lock"><LockKeyhole size={14} /> Acceso exclusivo para encargados autorizados</div></div></div></div>;
+  return <div className="login-page"><div className="login-art"><span className="login-kicker">JUVENTUD UNIDA DE PUENTE ALTO</span><div className="login-message"><div className="login-symbol"><Church size={54} strokeWidth={1} /></div><h1>Unidos en cada<br />encuentro.</h1><p>Un espacio para acompañar nuestras visitas,<br className="desktop" /> cuidar los detalles y seguir creciendo juntos.</p></div><span className="login-bottom">ASISTENCIA JUPA <span>·</span> PUENTE ALTO</span></div><div className="login-panel"><div className="login-card"><img className="login-logo" src="/logo-completo.webp" alt="JUPA · Juventud Unida de Puente Alto" /><div className="eyebrow">BIENVENIDO A TU ESPACIO</div><h2>{recovery ? 'Crea una nueva contraseña' : 'Cada visita cuenta.'}</h2><p className="muted">{recovery ? 'Utiliza al menos 12 caracteres.' : 'Ingresa para registrar y acompañar a nuestra juventud.'}</p><form onSubmit={submit}>{!recovery && <Field label="Usuario"><input type="text" value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required placeholder="german.duran" disabled={!api.configured} /></Field>}<Field label={recovery ? 'Nueva contraseña' : 'Contraseña'}><input type="password" value={password} minLength={recovery ? 12 : undefined} onChange={e => setPassword(e.target.value)} autoComplete={recovery ? 'new-password' : 'current-password'} required placeholder="Tu contraseña" disabled={!api.configured} /></Field><Button className="button primary full" busy={busy || loading} disabled={!api.configured} type="submit">{recovery ? 'Guardar contraseña' : 'Ingresar'} <ArrowRight size={18} /></Button></form>{(error || localError) && <p role="alert" className="form-error">{localError || error}</p>}{message && <p role="status" className="info-line">{message}</p>}{api.configured && !recovery && <button className="text-button recovery" onClick={() => { setMessage('Solicita al administrador restablecer tu contraseña.'); }}>Olvidé mi contraseña</button>}{api.demoAllowed && !recovery && <div className="demo-entry"><span>CONOCE LA APLICACIÓN</span><button className="button secondary full" onClick={onDemo}>Explorar versión de prueba <ArrowUpRight size={17} /></button><small>Datos ficticios. Puedes probar los flujos sin afectar registros reales.</small></div>}<div className="login-lock"><LockKeyhole size={14} /> Acceso exclusivo para encargados autorizados</div></div></div></div>;
 }
 function Metric({
   icon: Icon,
@@ -511,7 +501,7 @@ function Admin({
         username: '',
         password: '',
         role: 'encargado'
-      })}><Plus size={18} />{tab === 'classes' ? 'Agregar clase' : 'Crear usuario'}</button>}</div>{tab === 'classes' && <section className="panel admin-list">{data.classes.map(c => <div className="admin-row" key={c.id}><span className="class-icon"><Church size={21} /></span><div><strong>{c.name}</strong><small>{c.kind} · {data.people.filter(p => p.class_id === c.id && p.active).length} participantes{!c.active ? ' · Inactiva' : ''}</small></div><button className="button secondary small" onClick={() => setForm(c)}><Pencil size={15} /> Editar</button></div>)}</section>}{tab === 'users' && <section className="panel admin-list">{data.profiles.map(p => <div className="admin-row" key={p.id}><span className="account-avatar">{p.name[0]}</span><div><strong>{p.name}</strong><small>{p.username} · {p.role === 'admin' ? 'Administrador' : 'Encargado'}{!p.active ? ' · Desactivado' : ''}</small></div>{p.id !== profile.id && <button className="button secondary small" onClick={() => setForm({
+      })}><Plus size={18} />{tab === 'classes' ? 'Agregar clase' : 'Crear usuario'}</button>}</div>{tab === 'classes' && <section className="panel admin-list">{data.classes.map(c => <div className="admin-row" key={c.id}><span className="class-icon"><Church size={21} /></span><div><strong>{c.name}</strong><small>{c.kind} · {data.people.filter(p => p.class_id === c.id && p.active).length} participantes{!c.active ? ' · Inactiva' : ''}</small></div><button className="button secondary small" onClick={() => setForm(c)}><Pencil size={15} /> Editar</button></div>)}</section>}{tab === 'users' && <section className="panel admin-list">{data.profiles.map(p => <div className="admin-row" key={p.id}><span className="account-avatar">{p.name[0]}</span><div><strong>{p.name}</strong><small>{p.username || 'Usuario pendiente de configurar'} · {p.role === 'admin' ? 'Administrador' : 'Encargado'}{!p.active ? ' · Desactivado' : ''}</small></div>{p.id !== profile.id && <button className="button secondary small" onClick={() => setForm({
           action: 'update',
           id: p.id,
           name: p.name,
@@ -550,7 +540,7 @@ function Admin({
               })}><option value="yes">Activa</option><option value="no">Inactiva</option></select></Field></> : form.action === 'create' ? <><Field label="Nombre *"><input required maxLength={100} value={form.name} onChange={e => setForm({
                 ...form,
                 name: e.target.value
-              })} /></Field><Field label="Correo *"><input type="username" required value={form.username} onChange={e => setForm({
+              })} /></Field><Field label="Usuario *"><input type="text" required value={form.username} onChange={e => setForm({
                 ...form,
                 username: e.target.value
               })} /></Field><Field label="Contraseña inicial *" hint="Al menos 12 caracteres. Compártela de forma privada."><input type="password" required minLength={12} autoComplete="new-password" value={form.password} onChange={e => setForm({
