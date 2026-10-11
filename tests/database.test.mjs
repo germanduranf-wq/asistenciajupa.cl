@@ -18,6 +18,15 @@ test('PostgreSQL: seguridad, concurrencia lógica, plazo y conservación de hist
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$; grant usage on schema auth to authenticated,anon; grant execute on function auth.uid() to authenticated,anon; create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text); alter table storage.objects enable row level security; grant usage on schema storage to authenticated; grant select,insert,delete on storage.objects to authenticated;`);
   await db.exec(await readFile(new URL('../supabase/migrations/202610100001_initial.sql', import.meta.url), 'utf8'));
   await db.exec(`insert into auth.users values('${A}'),('${M}'),('${D}'); insert into public.profiles(id,name,email,role,active) values('${A}','Admin','a@test.cl','admin',true),('${M}','Encargado','m@test.cl','encargado',true),('${D}','Desactivado','d@test.cl','encargado',false); insert into public.classes(id,name) values('${C}','San Carlos'),('${C2}','Templo matriz'); insert into public.people(id,first_name,last_name,class_id,category) values('${P}',' Germán  Andrés ','Durán','${C}','Joven'),('${P2}','German Andres','Duran','${C}','Joven'); insert into public.visits(id,date,class_id,"group") values('${V}',(now() at time zone 'America/Santiago')::date,'${C}','Jóvenes'),('${OLD}',(now() at time zone 'America/Santiago')::date-22,'${C}','Jóvenes'),('${EDGE}',(now() at time zone 'America/Santiago')::date-21,'${C}','Jóvenes'),('${FUTURE}',(now() at time zone 'America/Santiago')::date+7,'${C}','Jóvenes');`);
+  await db.exec(await readFile(new URL('../supabase/migrations/202610110001_usernames.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202610110001_usernames.sql', import.meta.url), 'utf8'));
+  await t.test('migración repetible conserva perfiles y exige usuarios únicos y válidos', async () => {
+    await db.query("update public.profiles set username='admin' where id=$1", [A]);
+    await assert.rejects(() => db.query("update public.profiles set username='admin' where id=$1", [M]), /unique/);
+    await assert.rejects(() => db.query("update public.profiles set username='Admin' where id=$1", [M]), /check constraint/);
+    const saved = await db.query('select email from public.profiles where id=$1', [A]);
+    assert.equal(saved.rows[0].email, 'a@test.cl');
+  });
   const as = async id => {
     await db.exec('reset role');
     await db.query("select set_config('request.jwt.claim.sub',$1,false)", [id || '']);

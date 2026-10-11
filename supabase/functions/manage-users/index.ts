@@ -15,10 +15,12 @@ Deno.serve(async req => {
   const admin=createClient(url,key,{auth:{persistSession:false}});
   const body=await req.json();
   if(body.action==='create'){
-   if(typeof body.email!=='string'||!body.email.includes('@')||typeof body.name!=='string'||!body.name.trim()||body.name.length>100||typeof body.password!=='string'||body.password.length<12||!['admin','encargado'].includes(body.role))return reply({error:'Revisa nombre, correo, perfil y contraseña (mínimo 12 caracteres).'},400);
-   const {data:created,error}=await admin.auth.admin.createUser({email:body.email.trim().toLowerCase(),password:body.password,email_confirm:true});
+   const username=typeof body.username==='string'?body.username.trim().toLowerCase():'';
+   const email=`${username}@usuarios.jupa.invalid`;
+   if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)||typeof body.name!=='string'||!body.name.trim()||body.name.length>100||typeof body.password!=='string'||body.password.length<12||!['admin','encargado'].includes(body.role))return reply({error:'Revisa nombre, usuario (3 a 40 caracteres), perfil y contraseña (mínimo 12 caracteres).'},400);
+   const {data:created,error}=await admin.auth.admin.createUser({email,password:body.password,email_confirm:true});
    if(error)return reply({error:error.message},400);
-   const {error:profileError}=await admin.from('profiles').insert({id:created.user.id,name:body.name.trim(),email:body.email.trim().toLowerCase(),role:body.role});
+   const {error:profileError}=await admin.from('profiles').insert({id:created.user.id,name:body.name.trim(),email,username,role:body.role});
    if(profileError){await admin.auth.admin.deleteUser(created.user.id);return reply({error:'No se pudo crear el perfil. Vuelve a intentarlo.'},400);}
    await admin.from('audit_log').insert({actor:user.id,action:'CREATE_ACCOUNT',table_name:'profiles',record_id:created.user.id});
    return reply({ok:true,id:created.user.id});

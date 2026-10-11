@@ -1,3 +1,4 @@
+import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { createDemo } from './demo.mjs';
 import { canEdit, upper, cleanRut } from './domain.mjs';
@@ -20,7 +21,7 @@ export function leaveDemo() {
 const readDemo = () => {
   try {
     const value = JSON.parse(localStorage.getItem(KEY));
-    if (value?.people && value?.visits) return value;
+    if (value?.people && value?.visits) { value.profiles = value.profiles.map(p => ({ ...p, username: p.username || p.email?.split('@')[0] })); return value; }
   } catch {}
   const d = createDemo();
   localStorage.setItem(KEY, JSON.stringify(d));
@@ -64,9 +65,9 @@ export async function fetchProfile() {
   if (!user) return null;
   return result(await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle());
 }
-export async function login(email, password) {
+export async function login(username, password) {
   result(await supabase.auth.signInWithPassword({
-    email,
+    email: usernameEmail(username),
     password
   }));
 }
@@ -281,15 +282,16 @@ export async function photoUrl(path) {
   return r.signedUrl;
 }
 export async function manageUser(values) {
+  if (values.action === 'create') values = { ...values, username: normalizeUsername(values.username) };
   if (demo) {
     if (demoRole !== 'admin') throw Error('Acceso restringido.');
     const d = readDemo();
     if (values.action === 'create') {
-      if (d.profiles.some(p => p.email === values.email)) throw Error('El correo ya está registrado.');
+      if (d.profiles.some(p => p.username === values.username)) throw Error('El usuario ya está registrado.');
       d.profiles.push({
         id: crypto.randomUUID(),
         name: values.name,
-        email: values.email,
+        username: values.username,
         role: values.role,
         active: true
       });

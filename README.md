@@ -1,5 +1,7 @@
 # Asistencia JUPA
 
+> **Acceso actualizado a usuario y contraseña:** sigue primero `docs/USUARIOS.md` (o `USUARIOS.md` desde esta carpeta). Sustituye los pasos antiguos de alta/recuperación por correo por los de esa guía.
+
 Aplicación para la Juventud Unida de Puente Alto. React + Vite con Supabase (PostgreSQL, Auth, Storage privado y Realtime). Interfaz estática exportable: no necesita Node en el hosting que sirve la web.
 
 ## Estado de entrega
