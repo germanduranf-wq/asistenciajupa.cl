@@ -35,7 +35,7 @@ export function PersonForm({
   };
   const submit = async e => {
     e.preventDefault();
-    if (values.birth_date && (ageAt(values.birth_date,today())<18 || values.birth_date<'1900-01-01')) { setError('La fecha debe corresponder a una persona adulta.'); return; }
+    if (values.birth_date && (ageAt(values.birth_date,today())<10 || values.birth_date<'1900-01-01')) { setError('La fecha debe corresponder a un joven o encargado.'); return; }
     if (values.rut && !validRut(values.rut)) {
       setError('El RUT no es válido. Revisa los números y el dígito verificador.');
       return;
