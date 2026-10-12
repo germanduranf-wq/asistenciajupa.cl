@@ -1,9 +1,11 @@
+import {canPerson,ageAt} from './access.mjs';
 import React, { useState } from 'react';
 import { Plus, Check, AlertTriangle, UserRound, Camera } from 'lucide-react';
 import { Modal, Field, Button, Avatar } from './ui.jsx';
 import { CATEGORIES, ROLES, OUTCOMES, fullName, possibleDuplicates, validRut, today, upper } from './domain.mjs';
 import * as api from './api.mjs';
 export function PersonForm({
+  profile,
   person,
   data,
   onClose,
@@ -15,7 +17,7 @@ export function PersonForm({
   } : {
     first_name: '',
     last_name: '',
-    class_id: '',
+    class_id: profile?.role==='clase' ? profile.class_id : '',
     category: visit?.group === 'Señoritas' ? 'Señorita' : 'Joven',
     rut: '',
     active: true
@@ -33,6 +35,7 @@ export function PersonForm({
   };
   const submit = async e => {
     e.preventDefault();
+    if (values.birth_date && (ageAt(values.birth_date,today())<18 || values.birth_date<'1900-01-01')) { setError('La fecha debe corresponder a una persona adulta.'); return; }
     if (values.rut && !validRut(values.rut)) {
       setError('El RUT no es válido. Revisa los números y el dígito verificador.');
       return;
@@ -53,6 +56,7 @@ export function PersonForm({
         class_id: values.class_id,
         category: values.category,
         rut: values.rut,
+        birth_date: values.birth_date || null,
         active: values.active
       });
       await onSaved(saved);
@@ -62,7 +66,7 @@ export function PersonForm({
       setBusy(false);
     }
   };
-  return <Modal title={person ? 'Editar participante' : 'Agregar participante'} subtitle="Sus datos quedarán disponibles para las próximas visitas." onClose={busy ? () => {} : onClose}><form onSubmit={submit}><div className="modal-body"><div className="form-grid"><Field label="Nombres *"><input value={values.first_name} onChange={e => set('first_name', e.target.value)} required maxLength={80} autoFocus autoComplete="given-name" placeholder="Ej. Martin Antonio" /></Field><Field label="Apellidos *"><input value={values.last_name} onChange={e => set('last_name', e.target.value)} required maxLength={80} autoComplete="family-name" placeholder="Ej. Farias Soto" /></Field><Field label="Clase o local *"><select value={values.class_id} required onChange={e => set('class_id', e.target.value)}><option value="">Seleccionar clase</option>{data.classes.filter(c => c.active || c.id === values.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="Categoría *"><select value={values.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field><Field label="RUT (opcional)" hint="Ayuda a distinguir personas con el mismo nombre."><input value={values.rut || ''} onChange={e => set('rut', e.target.value)} maxLength={14} placeholder="12.345.678-5" /></Field>{person && <Field label="Estado"><select value={values.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')}><option value="true">Activo</option><option value="false">Inactivo · conserva historial</option></select></Field>}</div><p className="hint">La asistencia se atribuye solo a la clase seleccionada, incluso si también tiene un cargo en el templo matriz.</p>{duplicates.length > 0 && <div className="duplicates"><strong><AlertTriangle size={17} /> Encontramos personas parecidas</strong>{duplicates.slice(0, 5).map(p => <div className="mini-person" key={p.id}><Avatar person={p} /><div><b>{fullName(p)}</b><small>{data.classes.find(c => c.id === p.class_id)?.name}</small></div>{visit && <button type="button" className="text-button" onClick={() => {
+  return <Modal title={person ? 'Editar participante' : 'Agregar participante'} subtitle="Sus datos quedarán disponibles para las próximas actividades." onClose={busy ? () => {} : onClose}><form onSubmit={submit}><div className="modal-body"><div className="form-grid"><Field label="Nombres *"><input value={values.first_name} onChange={e => set('first_name', e.target.value)} required maxLength={80} autoFocus autoComplete="given-name" placeholder="Ej. Martin Antonio" /></Field><Field label="Apellidos *"><input value={values.last_name} onChange={e => set('last_name', e.target.value)} required maxLength={80} autoComplete="family-name" placeholder="Ej. Farias Soto" /></Field><Field label="Clase o local *"><select value={values.class_id} required onChange={e => set('class_id', e.target.value)}><option value="">Seleccionar clase</option>{data.classes.filter(c => (c.active || c.id === values.class_id) && canPerson(profile,c.id,'create')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="Categoría *"><select value={values.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field><Field label="Fecha de nacimiento (opcional)"><input type="date" min="1900-01-01" max={today()} value={values.birth_date||''} onChange={e=>set('birth_date',e.target.value)}/></Field><Field label="RUT (opcional)" hint="Ayuda a distinguir personas con el mismo nombre."><input value={values.rut || ''} onChange={e => set('rut', e.target.value)} maxLength={14} placeholder="12.345.678-5" /></Field>{person && canPerson(profile,person.class_id,'retire') && <Field label="Estado"><select value={values.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')}><option value="true">Activo</option><option value="false">Inactivo · conserva historial</option></select></Field>}</div><p className="hint">La asistencia se atribuye solo a la clase seleccionada, incluso si también tiene un cargo en el templo matriz.</p>{duplicates.length > 0 && <div className="duplicates"><strong><AlertTriangle size={17} /> Encontramos personas parecidas</strong>{duplicates.slice(0, 5).map(p => <div className="mini-person" key={p.id}><Avatar person={p} /><div><b>{fullName(p)}</b><small>{data.classes.find(c => c.id === p.class_id)?.name}</small></div>{visit && <button type="button" className="text-button" onClick={() => {
               onSaved(p);
               onClose();
             }}>Usar este registro</button>}</div>)}<label className="check-label"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> Confirmo que es una persona diferente.</label></div>}{error && <div role="alert" className="form-error">{error}</div>}<div className="info-line"><Camera size={18} /> Puedes agregar su foto después de guardar.</div></div><div className="modal-foot"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancelar</button><Button type="submit" className="button primary" busy={busy}><Check size={17} />{person ? 'Guardar cambios' : 'Agregar participante'}</Button></div></form></Modal>;
@@ -97,13 +101,13 @@ export function VisitForm({
       setBusy(false);
     }
   };
-  return <Modal title={visit ? 'Editar visita' : 'Programar visita'} subtitle="Prepara el encuentro y asigna a sus responsables." onClose={busy ? () => {} : onClose}><form onSubmit={submit}><div className="modal-body"><div className="form-grid"><Field label="Fecha *"><input type="date" value={values.date} required onChange={e => setValues({
+  return <Modal title={visit ? 'Editar visita' : 'Programar visita'} subtitle="Prepara el encuentro y asigna a sus responsables." onClose={busy ? () => {} : onClose}><form onSubmit={submit}><div className="modal-body"><div className="form-grid"><Field label="Fecha *"><input type="date" value={values.date} disabled={!!visit} required onChange={e => setValues({
               ...values,
               date: e.target.value
-            })} /></Field><Field label="Grupo *"><select value={values.group} onChange={e => setValues({
+            })} /></Field><Field label="Grupo *"><select disabled={!!visit} value={values.group} onChange={e => setValues({
               ...values,
               group: e.target.value
-            })}><option>Jóvenes</option><option>Señoritas</option></select></Field></div><Field label="Clase o local de destino *"><select required value={values.class_id} onChange={e => setValues({
+            })}><option>Jóvenes</option><option>Señoritas</option></select></Field></div><Field label="Clase o local de destino *"><select disabled={!!visit} required value={values.class_id} onChange={e => setValues({
             ...values,
             class_id: e.target.value
           })}><option value="">Seleccionar destino</option>{data.classes.filter(c => c.active || c.id === values.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><h3 className="form-section-title">Responsables <span>Opcionales</span></h3>{ROLES.map(role => <Field label={role} key={role}><select value={assignments[role]} onChange={e => setAssignments({

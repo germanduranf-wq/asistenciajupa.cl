@@ -80,6 +80,8 @@ export function createDemo() {
     version: 1
   })));
   return {
+    activity_modules: Object.entries({visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
+    account_permissions: ['visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
     classes,
     people,
     visits,

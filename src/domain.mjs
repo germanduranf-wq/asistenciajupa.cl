@@ -1,9 +1,9 @@
-export const CATEGORIES = ['Joven', 'Señorita', 'Encargado de jóvenes', 'Encargada de señoritas', 'Ayudante de jóvenes', 'Ayudante de señoritas'];
+export const CATEGORIES = ['Joven', 'Señorita', 'Encargado de jóvenes', 'Encargada de señoritas', 'Ayudante de jóvenes', 'Ayudante de señoritas', 'Colaborador', 'Colaboradora'];
 export const ROLES = ['Predicación', 'Coordinación', 'Dirección del coro'];
 export const OUTCOMES = ['Pendiente', 'Cumplió', 'Se excusó', 'No asistió', 'Asistió sin realizar la función'];
 export const normalize = (s = '') => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toUpperCase();
 export const upper = (s = '') => s.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-CL');
-export const groupOf = category => [1, 3, 5].includes(CATEGORIES.indexOf(category)) ? 'Señoritas' : 'Jóvenes';
+export const groupOf = category => [1, 3, 5, 7].includes(CATEGORIES.indexOf(category)) ? 'Señoritas' : 'Jóvenes';
 export const fullName = p => `${p?.first_name || ''} ${p?.last_name || ''}`.trim();
 export function today(date = new Date()) {
   const p = new Intl.DateTimeFormat('en-CA', {
@@ -59,9 +59,9 @@ export const possibleDuplicates = (people, p) => {
   return people.filter(x => x.id !== p.id && (p.rut && cleanRut(x.rut) === cleanRut(p.rut) || distance(normalize(fullName(x)), name) <= Math.max(1, Math.floor(name.length * .12))));
 };
 export function statistics(data, filters) {
-  const visits = data.visits.filter(v => v.date >= filters.from && v.date <= filters.to && (!filters.group || v.group === filters.group));
+  const visits = data.visits.filter(v => v.date >= filters.from && v.date <= filters.to && (!filters.activity_type || (v.activity_type||'visita')===filters.activity_type));
   const ids = new Set(visits.map(v => v.id));
-  const rows = data.attendance.filter(a => a.present && ids.has(a.visit_id) && (!filters.class_id || a.class_id === filters.class_id) && (!filters.category || a.category === filters.category));
+  const rows = data.attendance.filter(a => a.present && ids.has(a.visit_id) && visits.find(v=>v.id===a.visit_id)?.status !== 'suspended' && (!filters.group || groupOf(a.category)===filters.group) && (!filters.class_id || a.class_id === filters.class_id) && (!filters.category || a.category === filters.category));
   const peopleCount = new Map(),
     classCount = new Map(data.classes.map(c => [c.id, 0])),
     monthCount = new Map();
@@ -74,7 +74,7 @@ export function statistics(data, filters) {
   const history = data.attendance.filter(a => a.present && (!filters.class_id || a.class_id === filters.class_id) && (!filters.category || a.category === filters.category)).map(a => ({
     ...a,
     visit: data.visits.find(v => v.id === a.visit_id)
-  })).filter(a => a.visit && a.visit.date <= filters.to && (!filters.group || a.visit.group === filters.group));
+  })).filter(a => a.visit && a.visit.date <= filters.to && a.visit.status!=='suspended' && (!filters.activity_type || (a.visit.activity_type||'visita')===filters.activity_type) && (!filters.group || groupOf(a.category)===filters.group));
   const days = Number(filters.days) || 42;
   const inactive = [],
     returned = [];
@@ -96,7 +96,15 @@ export function statistics(data, filters) {
       }
     }
   }
+  const comparison = [];
+  for (let m=filters.from.slice(0,7); m<=filters.to.slice(0,7);) {
+    const records = rows.filter(a=>visits.find(v=>v.id===a.visit_id)?.date.startsWith(m));
+    comparison.push({month:m,young:records.filter(a=>groupOf(a.category)==='Jóvenes').length,women:records.filter(a=>groupOf(a.category)==='Señoritas').length,total:records.length});
+    const dt = new Date(m+'-15T12:00:00Z'); dt.setUTCMonth(dt.getUTCMonth()+1); m=dt.toISOString().slice(0,7);
+    if(comparison.length>120)break;
+  }
   return {
+    comparison,
     visits,
     rows,
     total: rows.length,

@@ -142,7 +142,9 @@ export function CropPhoto({
     setBusy(true);
     setError('');
     try {
-      const blob = await new Promise(resolve => canvas.current.toBlob(resolve, 'image/webp', .82));
+      let blob;
+      for (const quality of [.82,.65,.45]) { blob = await new Promise(resolve => canvas.current.toBlob(resolve, 'image/webp', quality)); if (blob && blob.size <= 524288) break; }
+      if (!blob || blob.size > 524288) blob = await new Promise(resolve => canvas.current.toBlob(resolve,'image/jpeg',.75));
       if (!blob) throw Error('No pudimos preparar la imagen.');
       await onSave(blob);
       onClose();

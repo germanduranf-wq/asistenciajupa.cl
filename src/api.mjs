@@ -1,3 +1,4 @@
+import { canPerson, canActivity, eligiblePerson, MODULES } from './access.mjs';
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { createDemo } from './demo.mjs';
@@ -6,7 +7,7 @@ const config = window.JUPA_CONFIG || {};
 export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
 export const supabase = configured ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
-const KEY = 'jupa-demo-v1';
+const KEY = 'jupa-demo-v2';
 let demo = false;
 let demoRole = 'admin';
 export const isDemo = () => demo;
@@ -36,13 +37,18 @@ function result(r) {
   return r.data;
 }
 export async function fetchAll() {
-  if (demo) return readDemo();
-  const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles'];
+  if (demo) {
+    const d = readDemo(), p = await fetchProfile();
+    const visits = d.visits.filter(v => canActivity(p,d,v.activity_type || 'visita',v.class_id));
+    const ids = new Set(visits.map(v => v.id));
+    return { ...d, people:d.people.filter(x=>canPerson(p,x.class_id)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
+  }
+  const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions'];
   const responses = await Promise.all(tables.map(async table => {
     let all = [];
     for (let start = 0;; start += 1000) {
       let query = supabase.from(table).select('*');
-      query = table === 'attendance' ? query.order('visit_id').order('person_id') : query.order('id');
+      query = table === 'activity_modules' ? query.order('code') : table === 'attendance' ? query.order('visit_id').order('person_id') : query.order('id');
       const r = result(await query.range(start, start + 999));
       all.push(...r);
       if (r.length < 1000) return all;
@@ -54,14 +60,13 @@ export async function fetchProfile() {
   if (demo) return {
     id: `demo-${demoRole === 'admin' ? 'admin' : 'member'}`,
     role: demoRole,
-    name: demoRole === 'admin' ? 'Administrador de prueba' : 'Encargado de prueba',
+    name: demoRole === 'admin' ? 'Administrador de prueba' : 'Cuenta de prueba',
+    class_id: demoRole === 'clase' ? 'c1' : null,
     active: true
   };
-  const {
-    data: {
-      user
-    }
-  } = await supabase.auth.getUser();
+  const { data: {session} } = await supabase.auth.getSession();
+  if (!session) return null;
+  const { data: {user} } = await supabase.auth.getUser();
   if (!user) return null;
   return result(await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle());
 }
@@ -79,6 +84,8 @@ export async function saveAttendance(visit, person, present, version) {
   if (demo) {
     if (!canEdit(visit, demoRole)) throw Error('La visita está fuera del plazo de edición.');
     const d = readDemo();
+    if (!eligiblePerson(visit,person) || visit.status === 'suspended') throw Error('Participante o actividad no disponible.');
+    if (present) d.visits = d.visits.map(v => v.id === visit.id ? { ...v,status:'held' } : v);
     const old = d.attendance.find(a => a.visit_id === visit.id && a.person_id === person.id);
     if ((old?.version || 0) !== version) throw Error('Otro encargado modificó esta asistencia. Actualizamos el registro; inténtalo de nuevo.');
     const value = {
@@ -106,11 +113,13 @@ export async function savePerson(person) {
     ...person,
     first_name: upper(person.first_name),
     last_name: upper(person.last_name),
-    rut: cleanRut(person.rut) || null
+    rut: cleanRut(person.rut) || null,
+    birth_date: person.birth_date || null
   };
   delete payload.photo_url;
   if (demo) {
-    if (payload.id && demoRole !== 'admin') throw Error('Solo el administrador puede modificar los datos.');
+    const prof = await fetchProfile();
+    if (!canPerson(prof,payload.class_id,payload.id ? 'edit' : 'create')) throw Error('No tienes permiso para modificar estos datos.');
     const d = readDemo();
     if (payload.rut && d.people.some(p => p.id !== payload.id && p.rut === payload.rut)) throw Error('Este RUT ya está registrado.');
     payload.id ||= crypto.randomUUID();
@@ -148,16 +157,17 @@ export async function saveClass(values) {
 }
 export async function saveVisit(values, assignments) {
   if (demo) {
-    if (demoRole !== 'admin') throw Error('Acceso restringido.');
     const d = readDemo();
+    if (!canActivity(await fetchProfile(),d,values.activity_type||'visita',values.class_id,'manage')) throw Error('Sin permiso.');
     const v = {
+      status: 'pending', activity_type:'visita',
       ...values,
       id: values.id || crypto.randomUUID(),
       version: (values.version || 0) + 1
     };
     const old = d.visits.find(x => x.id === v.id);
     if (old && old.version !== values.version) throw Error('La visita fue modificada. Actualiza antes de guardar.');
-    if (d.visits.some(x => x.id !== v.id && x.date === v.date && x.class_id === v.class_id && x.group === v.group)) throw Error('Ya existe una visita de ese grupo, fecha y destino.');
+    if (d.visits.some(x => x.id !== v.id && x.date === v.date && x.class_id === v.class_id && x.group === v.group && (x.activity_type || 'visita') === v.activity_type)) throw Error('Ya existe una visita de ese grupo, fecha y destino.');
     d.visits = old ? d.visits.map(x => x.id === v.id ? v : x) : [...d.visits, v];
     for (const [role, person_id] of Object.entries(assignments)) {
       const r = d.responsibilities.find(r => r.visit_id === v.id && r.role === role);
@@ -242,7 +252,7 @@ export async function mergePeople(source, target) {
   }));
 }
 export async function savePhoto(personId, blob) {
-  if (blob.type !== 'image/webp' || blob.size > 524288) throw Error('La foto optimizada debe ser WebP y pesar menos de 512 KB.');
+  if (!['image/webp','image/jpeg','image/png'].includes(blob.type) || blob.size > 524288) throw Error('La foto optimizada debe pesar menos de 512 KB.');
   if (demo) {
     const url = await new Promise(resolve => {
       const r = new FileReader();
@@ -258,9 +268,10 @@ export async function savePhoto(personId, blob) {
     return;
   }
   const previous = result(await supabase.from('people').select('photo_path').eq('id', personId).single());
-  const path = `${personId}/${crypto.randomUUID()}.webp`;
+  const ext = { 'image/webp':'webp', 'image/jpeg':'jpg', 'image/png':'png' }[blob.type];
+  const path = `${personId}/${crypto.randomUUID()}.${ext}`;
   result(await supabase.storage.from('portraits').upload(path, blob, {
-    contentType: 'image/webp',
+    contentType: blob.type,
     upsert: false
   }));
   try {
@@ -304,7 +315,7 @@ export async function manageUser(values) {
     writeDemo(d);
     return;
   }
-  const r = await supabase.functions.invoke('super-responder', {
+  const r = await supabase.functions.invoke(config.userFunction || 'super-responder', {
     body: values
   });
   if (r.error) {
@@ -337,4 +348,30 @@ export async function auditLog() {
 export function resetDemo() {
   localStorage.removeItem(KEY);
   writeDemo(createDemo());
+}
+export async function ensureSundays(from, to) {
+  if (demo) {
+    const d = readDemo(), profile = await fetchProfile();
+    for (let date = new Date(`${from}T12:00:00Z`); date.toISOString().slice(0,10) <= to; date.setUTCDate(date.getUTCDate()+1)) {
+      if (date.getUTCDay() !== 0) continue;
+      const day = date.toISOString().slice(0,10);
+      for (const c of d.classes.filter(c=>c.active)) for (const type of ['escuela_dominical','servicio_domingo']) {
+        if (!canActivity(profile,d,type,c.id,'manage') || d.visits.some(v=>v.date===day&&v.class_id===c.id&&v.activity_type===type)) continue;
+        d.visits.push({id:crypto.randomUUID(),date:day,class_id:c.id,venue_class_id:c.id,group:'Todos',activity_type:type,status:'pending',version:1,notes:''});
+      }
+    }
+    writeDemo(d); return;
+  }
+  result(await supabase.rpc('ensure_sundays',{p_from:from,p_to:to}));
+}
+export async function setActivityStatus(v, status, reason, venue) {
+  if (demo) {
+    const d=readDemo();
+    if (!canEdit(v,demoRole) || !canActivity(await fetchProfile(),d,v.activity_type||'visita',v.class_id,'manage')) throw Error('No tienes permiso para modificar esta actividad.');
+    if (status!=='held' && d.attendance.some(a=>a.visit_id===v.id&&a.present)) throw Error('Hay asistentes registrados; revisa las marcas.');
+    if(status==='suspended'&&!reason.trim())throw Error('Indica el motivo de suspensión.');
+    d.visits=d.visits.map(x=>x.id===v.id?{...x,status,suspension_reason:reason,venue_class_id:venue||x.class_id,version:x.version+1}:x);
+    writeDemo(d); return;
+  }
+  result(await supabase.rpc('set_activity_status',{p_id:v.id,p_status:status,p_reason:reason,p_venue:venue||v.class_id,p_version:v.version}));
 }
