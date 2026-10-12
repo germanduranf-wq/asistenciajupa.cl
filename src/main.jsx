@@ -202,9 +202,9 @@ function App() {
  <footer className="page-footer"><span>JUPA · Juventud Unida de Puente Alto</span><span>Hecho para acompañarnos.</span></footer></main></div>
  <nav className="bottom-nav">{nav.filter(([id])=>id!=='admin').map(([id, label, Icon]) => <button key={id} onClick={() => go(id)} className={page === id || id === 'visits' && page === 'attendance' ? 'active' : ''}><Icon size={20} /><span>{label}</span></button>)}</nav>
  {toast && <div role="status" className="toast"><CheckCheck size={18} />{toast}</div>}
- {modal?.type === 'person' && <PersonForm person={modal.person} visit={modal.visit} profile={profile} data={data} onClose={() => setModal(null)} onSaved={async p => {
-      await saved(modal.person ? 'Datos actualizados' : 'Participante agregado');
-      if (modal.onPerson) await modal.onPerson(p);
+ {modal?.type === 'person' && <PersonForm person={modal.person} visit={modal.visit} profile={profile} data={data} onClose={() => setModal(null)} onSaved={async (p, action) => {
+      await saved(action==='reactivated' ? 'Participante reincorporado. Su historial se conserva.' : modal.person ? 'Datos actualizados' : 'Participante agregado');
+      if (modal.onPerson && action!=='reactivated') await modal.onPerson(p);
     }} />}
  {modal?.type === 'activityStatus' && <ActivityStatus visit={modal.visit} data={data} onClose={()=>setModal(null)} onSaved={()=>saved('Estado actualizado')}/>}
  {modal?.type === 'visit' && <VisitForm visit={modal.visit} data={data} onClose={() => setModal(null)} onSaved={() => saved('Visita guardada')} />}

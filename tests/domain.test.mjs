@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, validRut, canEdit, today, statistics, possibleDuplicates, addDays } from '../src/domain.mjs';
+import { normalize, cleanRut, validRut, canEdit, today, statistics, possibleDuplicates, addDays } from '../src/domain.mjs';
 test('búsqueda normaliza tildes y espacios y detecta nombres similares sin fusionarlos', () => {
   assert.equal(normalize('  Germán   Durán '), 'GERMAN DURAN');
   const people = [{
@@ -85,3 +85,13 @@ test('estadísticas diferencian personas únicas y participaciones; preservan cl
   });
   assert.equal(filtered.total, 1);
 });
+
+ test('campos opcionales nulos no rompen la búsqueda de duplicados ni el guardado', () => {
+  assert.equal(normalize(null), '');
+  assert.equal(normalize(undefined), '');
+  assert.equal(cleanRut(null), '');
+  assert.equal(validRut(null), false);
+  const people = [{id:'sin-rut',first_name:'JUAN',last_name:'PEREZ',rut:null}];
+  assert.equal(possibleDuplicates(people,{first_name:'Juan',last_name:'Pérez',rut:'12.345.678-5'}).length,1);
+  assert.equal(possibleDuplicates(people,{first_name:'Pedro',last_name:'Soto',rut:'12.345.678-5'}).length,0);
+ });

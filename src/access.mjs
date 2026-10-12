@@ -13,7 +13,7 @@ export function canPerson(profile, classId, action = 'view') {
   if (!profile?.active || profile.must_change_password) return false;
   if (['admin','jefatura','secretaria'].includes(profile.role)) return true;
   if (profile.role === 'encargado') return ['view','create','photo'].includes(action);
-  return profile.role === 'clase' && (!classId || profile.class_id === classId) && ['view','create','edit','photo'].includes(action);
+  return profile.role === 'clase' && (!classId || profile.class_id === classId) && ['view','create','edit','photo','reactivate'].includes(action);
 }
 export const canSchedule = (p,d,m,c) => canActivity(p,d,m,c,'manage') && (m !== 'visita' || ['admin','jefatura'].includes(p.role));
 export const modulesFor = (p,d,action='view') => Object.keys(MODULES).filter(m => canActivity(p,d,m,null,action));

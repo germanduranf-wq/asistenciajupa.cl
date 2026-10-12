@@ -1,7 +1,7 @@
 export const CATEGORIES = ['Joven', 'Señorita', 'Encargado de jóvenes', 'Encargada de señoritas', 'Ayudante de jóvenes', 'Ayudante de señoritas', 'Colaborador', 'Colaboradora'];
 export const ROLES = ['Predicación', 'Coordinación', 'Dirección del coro'];
 export const OUTCOMES = ['Pendiente', 'Cumplió', 'Se excusó', 'No asistió', 'Asistió sin realizar la función'];
-export const normalize = (s = '') => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toUpperCase();
+export const normalize = (s = '') => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toUpperCase();
 export const upper = (s = '') => s.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-CL');
 export const groupOf = category => [1, 3, 5, 7].includes(CATEGORIES.indexOf(category)) ? 'Señoritas' : 'Jóvenes';
 export const fullName = p => `${p?.first_name || ''} ${p?.last_name || ''}`.trim();

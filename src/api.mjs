@@ -375,3 +375,15 @@ export async function setActivityStatus(v, status, reason, venue) {
   }
   result(await supabase.rpc('set_activity_status',{p_id:v.id,p_status:status,p_reason:reason,p_venue:venue||v.class_id,p_version:v.version}));
 }
+
+export async function reactivatePerson(id) {
+  if (demo) {
+    const d=readDemo(), profile=await fetchProfile(), person=d.people.find(p=>p.id===id);
+    if (!person || !canPerson(profile,person.class_id,'reactivate')) throw Error('No tienes permiso para reincorporar a este participante.');
+    if (person.merged_into) throw Error('Este registro fue fusionado. Utiliza la ficha que se conservó.');
+    const saved={...person,active:true}; d.people=d.people.map(p=>p.id===id?saved:p); writeDemo(d); return saved;
+  }
+  const r=await supabase.rpc('reactivate_person',{p_person:id});
+  if (r.error?.code==='PGRST202') throw Error('Falta aplicar la actualización SQL de reincorporación en Supabase.');
+  return result(r);
+}
