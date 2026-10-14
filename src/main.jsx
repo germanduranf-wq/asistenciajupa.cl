@@ -485,7 +485,7 @@ function Admin({
               })} /></Field><Field label="Tipo"><select value={form.kind} onChange={e => setForm({
                 ...form,
                 kind: e.target.value
-              })}><option>Clase</option><option>Local</option><option>Templo matriz</option></select></Field><Field label="Estado"><select value={form.active ? 'yes' : 'no'} onChange={e => setForm({
+              })}><option>Clase</option><option>Local</option><option>Templo matriz</option></select></Field><Field label="Dirección"><input maxLength={300} value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})}/></Field><Field label="Comuna"><input maxLength={100} value={form.commune??'Puente Alto'} onChange={e=>setForm({...form,commune:e.target.value})}/></Field><Field label="Enlace de Google Maps"><input type="url" pattern="https://.*" value={form.maps_url||''} onChange={e=>setForm({...form,maps_url:e.target.value})}/></Field><Field label="Estado"><select value={form.active ? 'yes' : 'no'} onChange={e => setForm({
                 ...form,
                 active: e.target.value === 'yes'
               })}><option value="yes">Activa</option><option value="no">Inactiva</option></select></Field></> : form.action === 'create' ? <><Field label="Nombre *"><input required maxLength={100} value={form.name} onChange={e => setForm({
