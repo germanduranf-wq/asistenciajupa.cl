@@ -1,6 +1,7 @@
+import {PublicBulletin,BulletinAdmin,VisitScheduler,BodiesAdmin} from './bulletin.jsx';
 import {Stats} from './reports.jsx';
 import {Activities,ActivityStatus,PasswordChange,UsersAdmin} from './activities.jsx';
-import {MODULES,PROFILE_ROLES,canActivity,canPerson,canSchedule,modulesFor,eligiblePerson,activityLabel,ageAt} from './access.mjs';
+import {MODULES,PROFILE_ROLES,canActivity,canPerson,canSchedule,canPublish,modulesFor,eligiblePerson,activityLabel,ageAt} from './access.mjs';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Home, CalendarDays, Users, ChartNoAxesCombined, Settings, ChevronRight, ChevronLeft, ArrowUpRight, Plus, Search, Check, MapPin, Clock3, Camera, LayoutList, Grid2X2, LogOut, ShieldCheck, Download, FileSpreadsheet, FileText, RefreshCw, LockKeyhole, Menu, X, Church, UserRound, CalendarCheck, CheckCheck, Ellipsis, ArrowRight, LoaderCircle, WifiOff, SlidersHorizontal, History, Link2, Pencil, Eye, KeyRound } from 'lucide-react';
@@ -16,7 +17,7 @@ const blank = {
   visits: [],
   attendance: [],
   responsibilities: [],
-  profiles: [], activity_modules: [], account_permissions: []
+  profiles: [], activity_modules: [], account_permissions: [], bodies: [], bulletin_events: [], bulletin_highlights: []
 };
 const baseNav = [['home', 'Inicio', Home], ['visits', 'Visitas', CalendarDays], ['people', 'Participantes', Users], ['stats', 'Estadísticas', ChartNoAxesCombined], ['admin', 'Administración', Settings]];
 function App() {
@@ -143,6 +144,9 @@ function App() {
     visits: ['Visitas', 'Organiza las visitas y registra la asistencia.'],
     people: ['Participantes', 'Hermanos y hermanas de nuestra jupa.'],
     stats: ['Estadísticas', 'Una mirada a nuestra participación.'],
+    activities: ['Actividades','Programación y asistencia según tus permisos.'],
+    bulletin: ['Avisos JUPA','Prepara los avisos que se comparten con la juventud.'],
+    schedule: ['Programar visitas','Calendario de jóvenes y señoritas.'],
     admin: ['Administración', 'Todo preparado para la próxima visita.']
   };
   if (profile?.must_change_password) return <PasswordChange profile={profile} onSaved={load}/>;
@@ -155,21 +159,17 @@ function App() {
     await load();
   }} />;
   const visibleModules = modulesFor(profile,data);
-  const nav = [...baseNav.filter(([id]) => id==='admin' ? profile.role==='admin' : id==='visits' ? visibleModules.includes('visita') : id==='stats' ? modulesFor(profile,data,'export').length>0 : true), ...visibleModules.filter(m=>m!=='visita').map(m=>[m,MODULES[m],CalendarDays])];
-  const canViewPage = page==='attendance' || nav.some(([id])=>id===page);
+  const nav = [...baseNav.filter(([id]) => id==='admin' ? profile.role==='admin' : id==='visits' ? visibleModules.includes('visita') : id==='stats' ? modulesFor(profile,data,'export').length>0 : true), ['activities','Actividades',CalendarDays], ...(canPublish(profile)?[['bulletin','Avisos JUPA',CalendarDays]]:[])];
+  const canViewPage = page==='attendance' || visibleModules.includes(page) || (page==='schedule'&&canSchedule(profile,data,'visita',null)) || nav.some(([id])=>id===page);
+  const signOut=async()=>{await api.logout();setProfile(null);setData(blank);setPage('home');setMenu(false);};
   const currentVisit = data.visits.find(v => v.id === visitId);
   return <div className="app-shell"><aside className={`sidebar ${menu ? 'open' : ''}`}><a className="brand" href="#" onClick={e => {
         e.preventDefault();
         go('home');
-      }}><img src="/logo-compacto.webp" alt="JUPA" /><span>ASISTENCIA</span></a><div className="side-label">JUVENTUD UNIDA · PUENTE ALTO</div><nav>{nav.map(([id, label, Icon]) => <button key={id} onClick={() => go(id)} className={`nav-item ${page === id || id === 'visits' && page === 'attendance' ? 'active' : ''}`}><Icon size={20} /><span>{label}</span>{page === id && <span className="nav-dot" />}</button>)}</nav><div className="sidebar-bottom"><div className="side-note"><Church size={22} /><p>En comunión en cada visita.<small>Juventud Unida de Puente Alto</small></p></div><div className="account"><span className="account-avatar">{profile.name?.[0] || 'A'}</span><span><b>{profile.name}</b><small>{PROFILE_ROLES[profile.role]}</small></span><button title="Cerrar sesión" aria-label="Cerrar sesión" onClick={async () => {
-            await api.logout();
-            setProfile(null);
-            setData(blank);
-            setPage('home');
-          }}><LogOut size={18} /></button></div></div></aside>{menu && <button className="menu-shade" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
+      }}><img src="/logo-compacto.webp" alt="JUPA" /><span>ASISTENCIA</span></a><div className="side-label">JUVENTUD UNIDA · PUENTE ALTO</div><nav>{nav.map(([id, label, Icon]) => <button key={id} onClick={() => go(id)} className={`nav-item ${page === id || id === 'visits' && page === 'attendance' ? 'active' : ''}`}><Icon size={20} /><span>{label}</span>{page === id && <span className="nav-dot" />}</button>)}</nav><div className="sidebar-bottom"><div className="side-note"><Church size={22} /><p>En comunión en cada visita.<small>Juventud Unida de Puente Alto</small></p></div><div className="account"><span className="account-avatar">{profile.name?.[0] || 'A'}</span><span><b>{profile.name}</b><small>{PROFILE_ROLES[profile.role]}</small></span></div></div></aside>{menu && <button className="menu-shade" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
  <div className="main-shell"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Abrir menú" onClick={() => setMenu(true)}><Menu size={22} /></button><div className="breadcrumb">Asistencia JUPA <ChevronRight size={13} /><b>{page === 'attendance' ? 'Pasar asistencia' : nav.find(n => n[0] === page)?.[1]}</b></div><div className="topbar-right"><span className="today-label"><CalendarDays size={15} />{dateLabel(today(), {
               year: 'numeric'
-            })}</span><span className="private-badge"><ShieldCheck size={14} /> Acceso privado</span></div></header>
+            })}</span><span className="private-badge"><ShieldCheck size={14} /> Acceso privado</span><button className="button secondary logout-top" aria-label="Cerrar sesión" onClick={signOut}><LogOut size={18}/><span>Salir</span></button></div></header>
  {api.isDemo() && <div className="demo-banner"><span><span className="demo-dot" /> Vista de prueba · datos ficticios guardados solo en este navegador</span><button onClick={() => {
           api.enterDemo(profile.role === 'admin' ? 'clase' : 'admin');
           load();
@@ -196,18 +196,22 @@ function App() {
  {visibleModules.filter(m=>m!=='visita').map(m=>page===m&&<Activities key={m} type={m} data={data} profile={profile} openVisit={openVisit} onRefresh={refresh}/>)}
  {page === 'attendance' && currentVisit && <Attendance key={currentVisit.id} visit={currentVisit} data={data} profile={profile} className={className} go={go} onRefresh={refresh} notify={notify} setModal={setModal} online={online} />}
  {page === 'attendance' && !currentVisit && <Empty icon={CalendarDays} title="No encontramos la visita" text="Vuelve al listado para seleccionar una visita." action={<button className="button primary" onClick={() => go('visits')}>Ver visitas</button>} />}
+ {page==='activities'&&<div className="activity-hub">{visibleModules.filter(m=>m!=='visita').map(m=><button className="panel activity-tile" key={m} onClick={()=>go(m)}><CalendarDays/><strong>{MODULES[m]}</strong><span>Programación y asistencia</span></button>)}{canSchedule(profile,data,'visita',null)&&<button className="panel activity-tile" onClick={()=>go('schedule')}><CalendarDays/><strong>Programar visitas</strong><span>Jóvenes y señoritas</span></button>}{!visibleModules.length&&!canSchedule(profile,data,'visita',null)&&<p>No tienes actividades habilitadas todavía.</p>}</div>}
+ {page==='schedule'&&canSchedule(profile,data,'visita',null)&&<VisitScheduler data={data} profile={profile} onSaved={saved}/>}
+ {page==='bulletin'&&canPublish(profile)&&<BulletinAdmin data={data} profile={profile} onSaved={saved}/>}
+ {page==='admin'&&profile.role==='admin'&&<BodiesAdmin data={data} onSaved={saved}/>}
  {page === 'people' && <People data={data} profile={profile} className={className} setModal={setModal} />}
  {page === 'stats' && modulesFor(profile,data,'export').length>0 && <Stats data={data} profile={profile} className={className} notify={notify} />}
  {page === 'admin' && profile.role === 'admin' && <Admin data={data} profile={profile} onSaved={saved} notify={notify} setModal={setModal} />}
  <footer className="page-footer"><span>JUPA · Juventud Unida de Puente Alto</span><span>Hecho para acompañarnos.</span></footer></main></div>
- <nav className="bottom-nav">{nav.filter(([id])=>id!=='admin').map(([id, label, Icon]) => <button key={id} onClick={() => go(id)} className={page === id || id === 'visits' && page === 'attendance' ? 'active' : ''}><Icon size={20} /><span>{label}</span></button>)}</nav>
+ <nav className="bottom-nav">{nav.filter(([id])=>['home','visits','people','activities','stats'].includes(id)).map(([id, label, Icon]) => <button key={id} onClick={() => go(id)} className={page === id || id === 'visits' && page === 'attendance' ? 'active' : ''}><Icon size={20} /><span>{label}</span></button>)}</nav>
  {toast && <div role="status" className="toast"><CheckCheck size={18} />{toast}</div>}
  {modal?.type === 'person' && <PersonForm person={modal.person} visit={modal.visit} profile={profile} data={data} onClose={() => setModal(null)} onSaved={async (p, action) => {
       await saved(action==='reactivated' ? 'Participante reincorporado. Su historial se conserva.' : modal.person ? 'Datos actualizados' : 'Participante agregado');
       if (modal.onPerson && action!=='reactivated') await modal.onPerson(p);
     }} />}
  {modal?.type === 'activityStatus' && <ActivityStatus visit={modal.visit} data={data} onClose={()=>setModal(null)} onSaved={()=>saved('Estado actualizado')}/>}
- {modal?.type === 'visit' && <VisitForm visit={modal.visit} data={data} onClose={() => setModal(null)} onSaved={() => saved('Visita guardada')} />}
+ {modal?.type === 'visit' && <VisitForm profile={profile} visit={modal.visit} data={data} onClose={() => setModal(null)} onSaved={() => saved('Visita guardada')} />}
  {modal?.type === 'photo' && <CropPhoto person={modal.person} onClose={() => setModal(null)} onSave={async blob => {
       await api.savePhoto(modal.person.id, blob);
       await saved('Fotografía guardada');
@@ -251,7 +255,7 @@ function Login({
       setBusy(false);
     }
   };
-  return <div className="login-page"><div className="login-art"><span className="login-kicker">JUVENTUD UNIDA DE PUENTE ALTO</span><div className="login-message"><div className="login-symbol"><Church size={54} strokeWidth={1} /></div><h1>Por Una JUPA<br />Conforme al Corazón de Cristo.</h1><p>Un espacio para acompañar a nuestra juventud,<br className="desktop" />Al servicio del Señor.🙌</p></div><span className="login-bottom">ASISTENCIA JUPA <span>·</span> PUENTE ALTO</span></div><div className="login-panel"><div className="login-card"><img className="login-logo" src="/logo-completo.webp" alt="JUPA · Juventud Unida de Puente Alto" /><div className="eyebrow">BIENVENIDO A ASISTENCIA JUPA</div><h2>{recovery ? 'Crea una nueva contraseña' : 'Cada visita cuenta.'}</h2><p className="muted">{recovery ? 'Utiliza al menos 12 caracteres.' : 'Ingresa para registrar y acompañar a nuestra juventud.'}</p><form onSubmit={submit}>{!recovery && <Field label="Usuario"><input type="text" value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required placeholder="usuario.jupa" disabled={!api.configured} /></Field>}<Field label={recovery ? 'Nueva contraseña' : 'Contraseña'}><input type="password" value={password} minLength={recovery ? 12 : undefined} onChange={e => setPassword(e.target.value)} autoComplete={recovery ? 'new-password' : 'current-password'} required placeholder="Tu contraseña" disabled={!api.configured} /></Field><Button className="button primary full" busy={busy || loading} disabled={!api.configured} type="submit">{recovery ? 'Guardar contraseña' : 'Ingresar'} <ArrowRight size={18} /></Button></form>{(error || localError) && <p role="alert" className="form-error">{localError || error}</p>}{message && <p role="status" className="info-line">{message}</p>}{api.configured && !recovery && <button className="text-button recovery" onClick={() => { setMessage('Solicita al administrador restablecer tu contraseña.'); }}>Olvidé mi contraseña</button>}{api.demoAllowed && !recovery && <div className="demo-entry"><span>CONOCE LA APLICACIÓN</span><button className="button secondary full" onClick={onDemo}>Explorar versión de prueba <ArrowUpRight size={17} /></button><small>Datos ficticios. Puedes probar los flujos sin afectar registros reales.</small></div>}<div className="login-lock"><LockKeyhole size={14} /> Acceso exclusivo para encargados autorizados</div></div></div></div>;
+  return <div className="login-page"><div className="login-art"><span className="login-kicker">JUVENTUD UNIDA DE PUENTE ALTO</span><div className="login-message"><div className="login-symbol"><Church size={54} strokeWidth={1} /></div><h1>Por Una JUPA<br />Conforme al Corazón de Cristo.</h1><p>Un espacio para acompañar a nuestra juventud,<br className="desktop" />Al servicio del Señor.🙌</p></div><span className="login-bottom">ASISTENCIA JUPA <span>·</span> PUENTE ALTO</span></div><div className="login-panel"><div className="login-card"><img className="login-logo" src="/logo-completo.webp" alt="JUPA · Juventud Unida de Puente Alto" /><div className="eyebrow">BIENVENIDO A ASISTENCIA JUPA</div><h2>{recovery ? 'Crea una nueva contraseña' : 'Cada visita cuenta.'}</h2><p className="muted">{recovery ? 'Utiliza al menos 12 caracteres.' : 'Ingresa para registrar y acompañar a nuestra juventud.'}</p><form onSubmit={submit}>{!recovery && <Field label="Usuario"><input type="text" value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required placeholder="usuario.jupa" disabled={!api.configured} /></Field>}<Field label={recovery ? 'Nueva contraseña' : 'Contraseña'}><input type="password" value={password} minLength={recovery ? 12 : undefined} onChange={e => setPassword(e.target.value)} autoComplete={recovery ? 'new-password' : 'current-password'} required placeholder="Tu contraseña" disabled={!api.configured} /></Field><Button className="button primary full" busy={busy || loading} disabled={!api.configured} type="submit">{recovery ? 'Guardar contraseña' : 'Ingresar'} <ArrowRight size={18} /></Button></form>{(error || localError) && <p role="alert" className="form-error">{localError || error}</p>}{message && <p role="status" className="info-line">{message}</p>}{api.configured && !recovery && <button className="text-button recovery" onClick={() => { setMessage('Solicita al administrador restablecer tu contraseña.'); }}>Olvidé mi contraseña</button>}{api.demoAllowed && !recovery && <div className="demo-entry"><span>CONOCE LA APLICACIÓN</span><button className="button secondary full" onClick={onDemo}>Explorar versión de prueba <ArrowUpRight size={17} /></button><small>Datos ficticios. Puedes probar los flujos sin afectar registros reales.</small></div>}<a className="button secondary full" href="/avisos">Ver Avisos JUPA sin iniciar sesión</a><div className="login-lock"><LockKeyhole size={14} /> Acceso exclusivo para encargados autorizados</div></div></div></div>;
 }
 function Metric({
   icon: Icon,
@@ -549,4 +553,4 @@ class ErrorBoundary extends React.Component {
     return this.state.error ? <div className="startup"><h1>No pudimos abrir esta pantalla.</h1><p>Recarga para recuperar el acceso. Los cambios guardados se conservan.</p><button className="button primary" onClick={() => location.reload()}>Recargar</button></div> : this.props.children;
   }
 }
-createRoot(document.getElementById('root')).render(<ErrorBoundary><App /></ErrorBoundary>);
+createRoot(document.getElementById('root')).render(<ErrorBoundary>{location.pathname.replace(/\/$/,'')==='/avisos'?<PublicBulletin/>:<App/>}</ErrorBoundary>);

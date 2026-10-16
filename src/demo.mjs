@@ -80,8 +80,9 @@ export function createDemo() {
     version: 1
   })));
   return {
-      activity_modules: Object.entries({visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
-    account_permissions: ['visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
+    activity_modules: Object.entries({visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
+    bodies: ['Comunicaciones JUPA','Audio JUPA','Enfermería JUPA','Secretaría JUPA','Coro JUPA'].map((name,i)=>({id:'body'+i,name,active:true})), bulletin_events: [], bulletin_highlights: [],
+    account_permissions: ['visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual','devocional'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
     classes,
     people,
     visits,

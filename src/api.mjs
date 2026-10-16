@@ -1,4 +1,4 @@
-import { canPerson, canActivity, eligiblePerson, MODULES } from './access.mjs';
+import { canPerson, canActivity, eligiblePerson, MODULES, canSchedule } from './access.mjs';
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { createDemo } from './demo.mjs';
@@ -7,7 +7,7 @@ const config = window.JUPA_CONFIG || {};
 export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
 export const supabase = configured ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
-const KEY = 'jupa-demo-v2';
+const KEY = 'jupa-demo-v3';
 let demo = false;
 let demoRole = 'admin';
 export const isDemo = () => demo;
@@ -39,11 +39,11 @@ function result(r) {
 export async function fetchAll() {
   if (demo) {
     const d = readDemo(), p = await fetchProfile();
-    const visits = d.visits.filter(v => canActivity(p,d,v.activity_type || 'visita',v.class_id));
-    const ids = new Set(visits.map(v => v.id));
+    const visits = d.visits.filter(v => (canActivity(p,d,v.activity_type || 'visita',v.class_id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)));
+    const ids = new Set(visits.filter(v=>canActivity(p,d,v.activity_type||'visita',v.class_id)).map(v => v.id));
     return { ...d, people:d.people.filter(x=>canPerson(p,x.class_id)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
   }
-  const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions'];
+  const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions', 'bodies', 'bulletin_events', 'bulletin_highlights'];
   const responses = await Promise.all(tables.map(async table => {
     let all = [];
     for (let start = 0;; start += 1000) {
@@ -158,7 +158,7 @@ export async function saveClass(values) {
 export async function saveVisit(values, assignments) {
   if (demo) {
     const d = readDemo();
-    if (!canActivity(await fetchProfile(),d,values.activity_type||'visita',values.class_id,'manage')) throw Error('Sin permiso.');
+    if (!canSchedule(await fetchProfile(),d,values.activity_type||'visita',values.class_id)) throw Error('Sin permiso.');
     const v = {
       status: 'pending', activity_type:'visita',
       ...values,
@@ -386,4 +386,21 @@ export async function reactivatePerson(id) {
   const r=await supabase.rpc('reactivate_person',{p_person:id});
   if (r.error?.code==='PGRST202') throw Error('Falta aplicar la actualización SQL de reincorporación en Supabase.');
   return result(r);
+}
+
+export async function saveBulletin(table, values) {
+  if (!['bulletin_events','bulletin_highlights','bodies'].includes(table)) throw Error('Tabla no válida.');
+  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];writeDemo(d);return v;}
+  const {id,version,...fields}=values;
+  if (table!=='bodies') fields.version=id?version+1:1;
+  let q=id?supabase.from(table).update(fields).eq('id',id):supabase.from(table).insert(fields);
+  if (id&&table!=='bodies') q=q.eq('version',version);
+  const saved=result(await q.select().maybeSingle());if(!saved)throw Error('Otra persona modificó el registro. Actualiza la página antes de guardar.');return saved;
+}
+export async function publicBulletin(month) {
+  if (configured&&!demo) return result(await supabase.rpc('public_bulletin',{p_month:month+'-01'}));
+  if (!demoAllowed&&!demo) throw Error('No está configurada la conexión para los avisos.');
+  const d=readDemo();return {month:month+'-01',highlight:d.bulletin_highlights?.find(x=>x.month===month+'-01'&&x.published)?.message||'',
+   activities:d.visits.filter(v=>v.date.startsWith(month)&&['visita','reunion_encargados','devocional'].includes(v.activity_type||'visita')).map(v=>{const c=d.classes.find(c=>c.id===(v.venue_class_id||v.class_id));return {id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,time:v.scheduled_time,class_name:c?.name,address:c?.address||'',commune:c?.commune||'Puente Alto',maps_url:c?.maps_url||'',status:v.status};}),
+   events:(d.bulletin_events||[]).filter(v=>v.published&&v.date.startsWith(month)).map(v=>({...v,hosts:(v.host_ids||[]).map(id=>d.classes.find(c=>c.id===id)?.name)}))};
 }

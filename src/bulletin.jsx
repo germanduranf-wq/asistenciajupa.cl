@@ -18,13 +18,14 @@ export function PublicBulletin(){
  const exportFile=async type=>{setBusy(type);setError('');try{
   const {default:html2canvas}=await import('html2canvas');await document.fonts.ready;
   const exportOptions={backgroundColor:'#f2f6fa',scale:2,useCORS:true,windowWidth:1024,onclone:doc=>{const sheet=doc.querySelector('.bulletin-sheet');sheet.style.width='820px';sheet.style.maxWidth='820px';}};
-  if(type==='png'){const canvas=await html2canvas(board.current,{...exportOptions,scale:Math.min(2,14000/board.current.scrollHeight)});const link=document.createElement('a');link.download='Avisos-JUPA-'+month+'.png';link.href=canvas.toDataURL('image/png');link.click();}
-  else {const {jsPDF}=await import('jspdf');const pdf=new jsPDF();let y=12;
+  if(type==='png'){const canvas=await html2canvas(board.current,{...exportOptions,scale:Math.min(2,14000/board.current.scrollHeight)});const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('No se pudo generar la imagen.');const url=URL.createObjectURL(blob),link=document.createElement('a');link.download='Avisos-JUPA-'+month+'.png';link.href=url;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+  else {const {jsPDF}=await import('jspdf');const pdf=new jsPDF({compress:true});let y=12;
    const cards=Array.from(board.current.querySelectorAll('[data-export-card]'));
-   for(const [index,card] of cards.entries()){let links=[];const part=await html2canvas(card,{...exportOptions,onclone:doc=>{exportOptions.onclone(doc);const c=doc.querySelectorAll('[data-export-card]')[index],b=c.getBoundingClientRect();links=[...c.querySelectorAll('a[href]')].map(a=>{const r=a.getBoundingClientRect();return {url:a.href,x:(r.left-b.left)/b.width,y:(r.top-b.top)/b.width,w:r.width/b.width,h:r.height/b.width};});}});
+   for(const [index,card] of cards.entries()){let links=[],nextHeight=0;const part=await html2canvas(card,{...exportOptions,onclone:doc=>{exportOptions.onclone(doc);const list=doc.querySelectorAll('[data-export-card]'),c=list[index],b=c.getBoundingClientRect(),next=list[index+1]?.getBoundingClientRect();nextHeight=next?next.height/next.width*186:0;links=[...c.querySelectorAll('a[href]')].map(a=>{const r=a.getBoundingClientRect();return {url:a.href,x:(r.left-b.left)/b.width,y:(r.top-b.top)/b.width,w:r.width/b.width,h:r.height/b.width};});}});
+    if(card.tagName==='H2'&&y>12&&y+part.height/part.width*186+5+Math.min(nextHeight,200)>277){pdf.addPage();y=12;}
     // Las tarjetas largas se reparten en páginas sin perder contenido.
     const pagePixels=part.width*263/186;
-    for(let offset=0;offset<part.height;offset+=pagePixels){const slice=document.createElement('canvas');slice.width=part.width;slice.height=Math.min(pagePixels,part.height-offset);slice.getContext('2d').drawImage(part,0,offset,part.width,slice.height,0,0,part.width,slice.height);const sh=slice.height/slice.width*186;if(y+sh>277){pdf.addPage();y=12;}pdf.addImage(slice.toDataURL('image/png'),'PNG',12,y,186,sh);
+    for(let offset=0;offset<part.height;offset+=pagePixels){const slice=document.createElement('canvas');slice.width=part.width;slice.height=Math.min(pagePixels,part.height-offset);slice.getContext('2d').drawImage(part,0,offset,part.width,slice.height,0,0,part.width,slice.height);const sh=slice.height/slice.width*186;if(y+sh>277){pdf.addPage();y=12;}pdf.addImage(slice.toDataURL('image/jpeg',0.9),'JPEG',12,y,186,sh,undefined,'FAST');
      for(const link of links){const top=link.y*part.width-offset;if(safeLink(link.url)&&top>=0&&top<slice.height)pdf.link(12+link.x*186,y+top*186/part.width,link.w*186,Math.min(link.h*186,sh-top*186/part.width),{url:link.url});}
      y+=sh+5;}
    }

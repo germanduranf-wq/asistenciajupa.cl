@@ -1,1 +1,29 @@
-{"name":"asistencia-jupa","version":"1.0.0","private":true,"type":"module","packageManager":"pnpm@10.11.0","scripts":{"dev":"vite --host 127.0.0.1","build":"vite build","test":"node --test tests/*.test.mjs","preview":"vite preview --host 127.0.0.1","export":"node scripts/export.mjs"},"dependencies":{"@supabase/supabase-js":"^2.57.0","exceljs":"4.4.0","jspdf":"^3.0.3","lucide-react":"^0.468.0","react":"^19.1.1","react-dom":"^19.1.1","xlsx":"https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"},"devDependencies":{"@electric-sql/pglite":"^0.3.10","@vitejs/plugin-react":"^5.0.4","vite":"^7.1.7"}}
+{
+  "name": "asistencia-jupa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "node --test tests/*.test.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "export": "node scripts/export.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "exceljs": "4.4.0",
+    "jspdf": "^3.0.3",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "html2canvas": "1.4.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.10",
+    "@vitejs/plugin-react": "^5.0.4",
+    "vite": "^7.1.7"
+  }
+}
