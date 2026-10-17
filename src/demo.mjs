@@ -79,7 +79,7 @@ export function createDemo() {
     note: '',
     version: 1
   })));
-  return {
+  const data = {
     activity_modules: Object.entries({visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
     bodies: ['Comunicaciones JUPA','Audio JUPA','Enfermería JUPA','Secretaría JUPA','Coro JUPA'].map((name,i)=>({id:'body'+i,name,active:true})), bulletin_events: [], bulletin_highlights: [],
     account_permissions: ['visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual','devocional'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
@@ -103,4 +103,27 @@ export function createDemo() {
     }],
     audit: []
   };
+  for(const [i,p] of data.people.entries())p.body_ids=i%3===0?['body4','body0']:i%3===1?['body4']:[];
+  for(const [code,name] of [['ensayo_coro','Ensayos Coro JUPA'],['evento_coro','Coro en evento JUPA']]){
+   data.activity_modules.push({code,name,enabled:true});data.account_permissions.push({id:'perm-'+code,profile_id:'demo-member',module:code,class_id:null,can_view:true,can_manage:true,can_export:true});
+  }
+  for(const p of data.account_permissions)p.can_schedule=p.module==='visita';
+  // Historial reproducible: ausencia prolongada, regreso reciente y participantes sin marcas.
+  for(let offset=84;offset>=0;offset-=7){
+   for(const type of ['ensayo_coro','reunion_encargados','devocional','escuela_dominical','servicio_domingo','reunion_mensual']){
+    if(['ensayo_coro','reunion_encargados','devocional','reunion_mensual'].includes(type)&&offset%28!==0&&!(type==='ensayo_coro'&&offset%28===14))continue;
+    const v={id:'demo-'+type+'-'+offset,date:addDays(t,-offset),class_id:'c1',group:'Todos',activity_type:type,status:'held',notes:'Ejemplo ficticio',version:1};data.visits.push(v);
+    for(const [i,p]of data.people.entries()){
+     if(type==='ensayo_coro'&&!p.body_ids.includes('body4'))continue;
+     if(['escuela_dominical','servicio_domingo','reunion_mensual'].includes(type)&&p.class_id!=='c1')continue;
+     if(type==='reunion_encargados'&&!/Encargad|Ayudante/.test(p.category))continue;
+     if(i===0&&offset<49||i===3&&offset>0&&offset<70||i===4||(i+offset)%5===0)continue;
+     data.attendance.push({visit_id:v.id,person_id:p.id,present:true,class_id:p.class_id,category:p.category,version:1});
+    }
+   }
+  }
+  data.visits.push({id:'demo-evento',date:t,class_id:'c0',group:'Todos',activity_type:'evento_coro',status:'pending',version:1,notes:'Participación del coro en el encuentro mensual JUPA',evento_id:'demo-publico'});
+  data.bulletin_events.push({id:'demo-publico',kind:'jupa',date:t,title:'Encuentro mensual JUPA',host_ids:['c0','c1'],venue:'Templo Matriz',address:'Dirección ficticia de ejemplo',maps_url:'',preaching_place:'Plaza de ejemplo',morning_time:'10:00',evening_time:'18:00',published:true,version:1});
+  data.bulletin_highlights.push({id:'aviso-demo',month:t.slice(0,7)+'-01',message:'Datos de demostración: acompáñanos en las actividades del mes.',published:true,version:1});
+  return data;
 }

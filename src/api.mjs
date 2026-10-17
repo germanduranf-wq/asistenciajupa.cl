@@ -1,3 +1,4 @@
+import {database} from './database.mjs';
 import { canPerson, canActivity, eligiblePerson, MODULES, canSchedule } from './access.mjs';
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
@@ -7,7 +8,8 @@ const config = window.JUPA_CONFIG || {};
 export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
 export const supabase = configured ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
-const KEY = 'jupa-demo-v3';
+const db = configured ? database(supabase) : null;
+const KEY = 'jupa-demo-v4';
 let demo = false;
 let demoRole = 'admin';
 export const isDemo = () => demo;
@@ -39,22 +41,23 @@ function result(r) {
 export async function fetchAll() {
   if (demo) {
     const d = readDemo(), p = await fetchProfile();
-    const visits = d.visits.filter(v => (canActivity(p,d,v.activity_type || 'visita',v.class_id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)));
+    const visits = d.visits.filter(v => !v.eliminado_el && (canActivity(p,d,v.activity_type || 'visita',v.class_id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)));
     const ids = new Set(visits.filter(v=>canActivity(p,d,v.activity_type||'visita',v.class_id)).map(v => v.id));
-    return { ...d, people:d.people.filter(x=>canPerson(p,x.class_id)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
+    return { ...d, archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x.class_id)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
   }
   const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions', 'bodies', 'bulletin_events', 'bulletin_highlights'];
   const responses = await Promise.all(tables.map(async table => {
     let all = [];
     for (let start = 0;; start += 1000) {
-      let query = supabase.from(table).select('*');
+      let query = db.from(table).select('*');
       query = table === 'activity_modules' ? query.order('code') : table === 'attendance' ? query.order('visit_id').order('person_id') : query.order('id');
       const r = result(await query.range(start, start + 999));
       all.push(...r);
       if (r.length < 1000) return all;
     }
   }));
-  return Object.fromEntries(tables.map((t, i) => [t, responses[i]]));
+  const data = Object.fromEntries(tables.map((t,i)=>[t,responses[i]]));
+  data.archived_visits=data.visits.filter(v=>v.eliminado_el);data.visits=data.visits.filter(v=>!v.eliminado_el);return data;
 }
 export async function fetchProfile() {
   if (demo) return {
@@ -68,7 +71,7 @@ export async function fetchProfile() {
   if (!session) return null;
   const { data: {user} } = await supabase.auth.getUser();
   if (!user) return null;
-  return result(await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle());
+  return result(await db.from('profiles').select('*').eq('id', user.id).maybeSingle());
 }
 export async function login(username, password) {
   result(await supabase.auth.signInWithPassword({
@@ -84,7 +87,7 @@ export async function saveAttendance(visit, person, present, version) {
   if (demo) {
     if (!canEdit(visit, demoRole)) throw Error('La visita está fuera del plazo de edición.');
     const d = readDemo();
-    if (!eligiblePerson(visit,person) || visit.status === 'suspended') throw Error('Participante o actividad no disponible.');
+    if (!eligiblePerson(visit,person,d) || visit.status === 'suspended') throw Error('Participante o actividad no disponible.');
     if (present) d.visits = d.visits.map(v => v.id === visit.id ? { ...v,status:'held' } : v);
     const old = d.attendance.find(a => a.visit_id === visit.id && a.person_id === person.id);
     if ((old?.version || 0) !== version) throw Error('Otro encargado modificó esta asistencia. Actualizamos el registro; inténtalo de nuevo.');
@@ -101,7 +104,7 @@ export async function saveAttendance(visit, person, present, version) {
     writeDemo(d);
     return value;
   }
-  return result(await supabase.rpc('set_attendance', {
+  return result(await db.rpc('set_attendance', {
     p_visit: visit.id,
     p_person: person.id,
     p_present: present,
@@ -135,7 +138,7 @@ export async function savePerson(person) {
     id,
     ...values
   } = payload;
-  return result(id ? await supabase.from('people').update(values).eq('id', id).select().single() : await supabase.from('people').insert(values).select().single());
+  return result(id ? await db.from('people').update(values).eq('id', id).select().single() : await db.from('people').insert(values).select().single());
 }
 export async function saveClass(values) {
   if (demo) {
@@ -153,7 +156,7 @@ export async function saveClass(values) {
     id,
     ...rest
   } = values;
-  return result(id ? await supabase.from('classes').update(rest).eq('id', id).select().single() : await supabase.from('classes').insert(rest).select().single());
+  return result(id ? await db.from('classes').update(rest).eq('id', id).select().single() : await db.from('classes').insert(rest).select().single());
 }
 export async function saveVisit(values, assignments) {
   if (demo) {
@@ -191,7 +194,7 @@ export async function saveVisit(values, assignments) {
     writeDemo(d);
     return v;
   }
-  return result(await supabase.rpc('save_visit', {
+  return result(await db.rpc('save_visit', {
     p_values: values,
     p_assignments: assignments
   }));
@@ -210,7 +213,7 @@ export async function saveResponsibility(r) {
     writeDemo(d);
     return;
   }
-  result(await supabase.rpc('set_responsibility', {
+  result(await db.rpc('set_responsibility', {
     p_id: r.id,
     p_outcome: r.outcome,
     p_actual: r.actual_person_id || null,
@@ -246,7 +249,7 @@ export async function mergePeople(source, target) {
     writeDemo(d);
     return;
   }
-  result(await supabase.rpc('merge_people', {
+  result(await db.rpc('merge_people', {
     p_source: source,
     p_target: target
   }));
@@ -267,7 +270,7 @@ export async function savePhoto(personId, blob) {
     writeDemo(d);
     return;
   }
-  const previous = result(await supabase.from('people').select('photo_path').eq('id', personId).single());
+  const previous = result(await db.from('people').select('photo_path').eq('id', personId).single());
   const ext = { 'image/webp':'webp', 'image/jpeg':'jpg', 'image/png':'png' }[blob.type];
   const path = `${personId}/${crypto.randomUUID()}.${ext}`;
   result(await supabase.storage.from('portraits').upload(path, blob, {
@@ -275,7 +278,7 @@ export async function savePhoto(personId, blob) {
     upsert: false
   }));
   try {
-    result(await supabase.rpc('set_photo', {
+    result(await db.rpc('set_photo', {
       p_person: personId,
       p_path: path
     }));
@@ -304,6 +307,7 @@ export async function manageUser(values) {
         name: values.name,
         username: values.username,
         role: values.role,
+        class_id: values.class_id || null,
         active: true
       });
     } else if (values.action === 'update') {
@@ -313,7 +317,7 @@ export async function manageUser(values) {
       } : p);
     }
     writeDemo(d);
-    return;
+    return {ok:true,id:values.action==='create'?d.profiles.at(-1).id:values.id};
   }
   const r = await supabase.functions.invoke(config.userFunction || 'super-responder', {
     body: values
@@ -332,7 +336,7 @@ export async function manageUser(values) {
   }
   if (values.action === 'create') {
     if (typeof r.data.id !== 'string') throw Error('La función no devolvió el identificador de la cuenta creada. Revisa su código en Supabase.');
-    const created = result(await supabase.from('profiles').select('id,username').eq('id', r.data.id).maybeSingle());
+    const created = result(await db.from('profiles').select('id,username').eq('id', r.data.id).maybeSingle());
     if (!created || created.username !== values.username) {
       throw Error('No se pudo verificar el perfil creado. Revisa Authentication y profiles en Supabase antes de volver a crear la cuenta.');
     }
@@ -341,7 +345,7 @@ export async function manageUser(values) {
 }
 export async function auditLog() {
   if (demo) return readDemo().audit || [];
-  return result(await supabase.from('audit_log').select('*').order('created_at', {
+  return result(await db.from('audit_log').select('*').order('created_at', {
     ascending: false
   }).limit(100));
 }
@@ -362,7 +366,7 @@ export async function ensureSundays(from, to) {
     }
     writeDemo(d); return;
   }
-  result(await supabase.rpc('ensure_sundays',{p_from:from,p_to:to}));
+  result(await db.rpc('ensure_sundays',{p_from:from,p_to:to}));
 }
 export async function setActivityStatus(v, status, reason, venue) {
   if (demo) {
@@ -373,7 +377,7 @@ export async function setActivityStatus(v, status, reason, venue) {
     d.visits=d.visits.map(x=>x.id===v.id?{...x,status,suspension_reason:reason,venue_class_id:venue||x.class_id,version:x.version+1}:x);
     writeDemo(d); return;
   }
-  result(await supabase.rpc('set_activity_status',{p_id:v.id,p_status:status,p_reason:reason,p_venue:venue||v.class_id,p_version:v.version}));
+  result(await db.rpc('set_activity_status',{p_id:v.id,p_status:status,p_reason:reason,p_venue:venue||v.class_id,p_version:v.version}));
 }
 
 export async function reactivatePerson(id) {
@@ -383,24 +387,39 @@ export async function reactivatePerson(id) {
     if (person.merged_into) throw Error('Este registro fue fusionado. Utiliza la ficha que se conservó.');
     const saved={...person,active:true}; d.people=d.people.map(p=>p.id===id?saved:p); writeDemo(d); return saved;
   }
-  const r=await supabase.rpc('reactivate_person',{p_person:id});
+  const r=await db.rpc('reactivate_person',{p_person:id});
   if (r.error?.code==='PGRST202') throw Error('Falta aplicar la actualización SQL de reincorporación en Supabase.');
   return result(r);
 }
 
 export async function saveBulletin(table, values) {
   if (!['bulletin_events','bulletin_highlights','bodies'].includes(table)) throw Error('Tabla no válida.');
-  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];writeDemo(d);return v;}
+  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];if(table==='bulletin_events'){const existing=d.visits.find(x=>x.evento_id===v.id);if(v.kind==='jupa'){const linked={...existing,id:existing?.id||crypto.randomUUID(),evento_id:v.id,date:v.date,class_id:v.host_ids[0],group:'Todos',activity_type:'evento_coro',status:existing?.status||'pending',notes:v.title,version:(existing?.version||0)+1,eliminado_el:v.published?null:new Date().toISOString()};d.visits=existing?d.visits.map(x=>x.id===existing.id?linked:x):[...d.visits,linked];}else if(existing)existing.eliminado_el=new Date().toISOString();}writeDemo(d);return v;}
   const {id,version,...fields}=values;
   if (table!=='bodies') fields.version=id?version+1:1;
-  let q=id?supabase.from(table).update(fields).eq('id',id):supabase.from(table).insert(fields);
+  let q=id?db.from(table).update(fields).eq('id',id):db.from(table).insert(fields);
   if (id&&table!=='bodies') q=q.eq('version',version);
   const saved=result(await q.select().maybeSingle());if(!saved)throw Error('Otra persona modificó el registro. Actualiza la página antes de guardar.');return saved;
 }
 export async function publicBulletin(month) {
-  if (configured&&!demo) return result(await supabase.rpc('public_bulletin',{p_month:month+'-01'}));
+  if (configured&&!demo) return result(await db.rpc('public_bulletin',{p_month:month+'-01'}));
   if (!demoAllowed&&!demo) throw Error('No está configurada la conexión para los avisos.');
   const d=readDemo();return {month:month+'-01',highlight:d.bulletin_highlights?.find(x=>x.month===month+'-01'&&x.published)?.message||'',
-   activities:d.visits.filter(v=>v.date.startsWith(month)&&['visita','reunion_encargados','devocional'].includes(v.activity_type||'visita')).map(v=>{const c=d.classes.find(c=>c.id===(v.venue_class_id||v.class_id));return {id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,time:v.scheduled_time,class_name:c?.name,address:c?.address||'',commune:c?.commune||'Puente Alto',maps_url:c?.maps_url||'',status:v.status};}),
+   activities:d.visits.filter(v=>!v.eliminado_el&&v.date.startsWith(month)&&['visita','reunion_encargados','devocional'].includes(v.activity_type||'visita')).map(v=>{const c=d.classes.find(c=>c.id===(v.venue_class_id||v.class_id));return {id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,time:v.scheduled_time,class_name:c?.name,address:c?.address||'',commune:c?.commune||'Puente Alto',maps_url:c?.maps_url||'',status:v.status};}),
    events:(d.bulletin_events||[]).filter(v=>v.published&&v.date.startsWith(month)).map(v=>({...v,hosts:(v.host_ids||[]).map(id=>d.classes.find(c=>c.id===id)?.name)}))};
 }
+
+export async function saveAttendanceBatch(visit, changes) {
+ if(!demo)return result(await db.rpc('guardar_asistencias',{p_visit:visit.id,p_changes:changes}));
+ const d=readDemo(),p=await fetchProfile();if(!canEdit(visit,p.role)||!canActivity(p,d,visit.activity_type||'visita',visit.class_id,'manage'))throw Error('No tienes permiso para guardar.');
+ for(const c of changes){const old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);if((old?.version||0)!==c.version)throw Error('Otro encargado modificó una marca. Revisa los cambios pendientes.');}
+ const saved=changes.map(c=>{const person=d.people.find(p=>p.id===c.person_id),old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);return {...old,visit_id:visit.id,person_id:person.id,present:c.present,class_id:old?.class_id||person.class_id,category:old?.category||person.category,version:c.version+1,updated_at:new Date().toISOString()};});
+ d.attendance=d.attendance.filter(a=>!saved.some(b=>b.visit_id===a.visit_id&&b.person_id===a.person_id)).concat(saved);if(changes.some(c=>c.present))d.visits=d.visits.map(v=>v.id===visit.id?{...v,status:'held'}:v);writeDemo(d);return saved;
+}
+export async function attendanceFor(id){if(demo)return readDemo().attendance.filter(a=>a.visit_id===id);return result(await db.from('attendance').select('*').eq('visit_id',id));}
+export async function archiveActivity(v,archived=true){if(demo){const d=readDemo();d.visits=d.visits.map(x=>x.id===v.id?{...x,eliminado_el:archived?new Date().toISOString():null,version:x.version+1}:x);writeDemo(d);return;}return result(await db.rpc('archivar_actividad',{p_id:v.id,p_version:v.version,p_archivar:archived}));}
+export async function demoOptions(){if(!configured)return demoAllowed?['admin','jefatura','secretaria','clase','coro']:[];try{return result(await db.rpc('demostraciones'))||[];}catch{return [];}}
+export async function adminDemoOptions(){if(demo)return ['admin','jefatura','secretaria','clase','coro'].map(perfil=>({perfil,habilitada:true}));return result(await db.from('demostraciones').select('*').order('perfil'));}
+export async function setDemoOption(perfil,habilitada){if(demo)return;result(await db.from('demostraciones').update({habilitada}).eq('perfil',perfil));}
+export async function savePermissions(id,permissions){if(demo){const d=readDemo();d.account_permissions=d.account_permissions.filter(p=>p.profile_id!==id).concat(permissions.map((p,i)=>({...p,id:'demo-perm-'+i,profile_id:id})));writeDemo(d);return;}result(await db.rpc('guardar_permisos',{p_usuario:id,p_permisos:permissions}));}
+export async function setModule(code,enabled){if(demo){const d=readDemo();d.activity_modules=d.activity_modules.map(m=>m.code===code?{...m,enabled}:m);writeDemo(d);return;}result(await db.from('activity_modules').update({enabled}).eq('code',code));}

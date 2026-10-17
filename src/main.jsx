@@ -1,6 +1,9 @@
+import {toggleDraft,effectiveMarks,draftConflicts} from './attendance-draft.mjs';
+import {decode} from './schema.mjs';
+import {DemoAdmin,PermissionsAdmin,ArchivedActivities} from './settings-v3.jsx';
 import {PublicBulletin,BulletinAdmin,VisitScheduler,BodiesAdmin} from './bulletin.jsx';
 import {Stats} from './reports.jsx';
-import {Activities,ActivityStatus,PasswordChange,UsersAdmin} from './activities.jsx';
+import {Activities,ActivityForm,ActivityStatus,PasswordChange,UsersAdmin} from './activities.jsx';
 import {MODULES,PROFILE_ROLES,canActivity,canPerson,canSchedule,canPublish,modulesFor,eligiblePerson,activityLabel,ageAt} from './access.mjs';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -33,12 +36,15 @@ function App() {
     [online, setOnline] = useState(navigator.onLine),
     [recovery, setRecovery] = useState(false);
   const refreshTicket = useRef(0);
+  const dirtyAttendance = useRef(false);
+  const guardNavigation=()=>!dirtyAttendance.current||window.confirm('Hay marcas sin guardar. ¿Quieres salir y descartarlas?');
   const alive = useRef(true);
   const refresh = async () => {
     const ticket = ++refreshTicket.current;
     if (!api.isDemo()) {
       const activeProfile = await api.fetchProfile();
       if (activeProfile?.must_change_password) { setProfile(activeProfile); setData(blank); setModal(null); return; }
+      if (activeProfile?.active) setProfile(activeProfile);
       if (!activeProfile?.active) {
         setProfile(null);
         setData(blank);
@@ -46,7 +52,7 @@ function App() {
         throw new Error('La sesión terminó o tu cuenta ya no tiene acceso.');
       }
     }
-    if (!api.isDemo()) { const latest = await api.fetchProfile(); if (latest) setProfile(latest); }
+
     const next = await api.fetchAll();
     if (ticket === refreshTicket.current && alive.current) setData(next);
   };
@@ -102,18 +108,29 @@ function App() {
   }, []);
   useEffect(() => {
     if (!profile) return;
-    const sync = () => refresh().catch(() => setError('No pudimos actualizar los datos. Revisa tu conexión y reintenta.'));
+    const sync = () => { clearTimeout(syncTimer); syncTimer=setTimeout(()=>refresh().catch(() => setError('No pudimos actualizar los datos. Revisa tu conexión y reintenta.')),600); };
+    let syncTimer;
     window.addEventListener('storage', sync);
     window.addEventListener('jupa-change', sync);
     window.addEventListener('focus', sync);
-    const interval = setInterval(sync, 20000);
+    const interval = setInterval(sync, 60000);
     let channel;
     if (!api.isDemo()) channel = api.supabase.channel('jupa-live').on('postgres_changes', {
       event: '*',
       schema: 'public'
-    }, sync).subscribe();
+    }, event=>{
+      if(event.table==='asistencias'&&event.new?.actividad_id){
+        const row=decode(event.new);
+        setData(d=>{
+          if(!d.visits.some(v=>v.id===row.visit_id))return d;
+          const old=d.attendance.find(a=>a.visit_id===row.visit_id&&a.person_id===row.person_id);
+          if(old&&old.version>=row.version)return d;
+          return {...d,attendance:d.attendance.filter(a=>a!==old).concat(row)};
+        });
+      }else sync();
+    }).subscribe();
     return () => {
-      clearInterval(interval);
+      clearInterval(interval);clearTimeout(syncTimer);
       window.removeEventListener('storage', sync);
       window.removeEventListener('jupa-change', sync);
       window.removeEventListener('focus', sync);
@@ -127,6 +144,7 @@ function App() {
     }
   }, [toast]);
   const go = (next, id = null) => {
+    if(!guardNavigation())return;dirtyAttendance.current=false;
     setPage(next);
     setVisitId(id);
     setMenu(false);
@@ -154,14 +172,14 @@ function App() {
   if (!profile || recovery) return <Login error={error} loading={loading} recovery={recovery} onRecovered={() => {
     setRecovery(false);
     load();
-  }} onLogin={load} onDemo={async () => {
-    api.enterDemo();
+  }} onLogin={load} onDemo={async (role) => {
+    api.enterDemo(role);
     await load();
   }} />;
   const visibleModules = modulesFor(profile,data);
   const nav = [...baseNav.filter(([id]) => id==='admin' ? profile.role==='admin' : id==='visits' ? visibleModules.includes('visita') : id==='stats' ? modulesFor(profile,data,'export').length>0 : true), ['activities','Actividades',CalendarDays], ...(canPublish(profile)?[['bulletin','Avisos JUPA',CalendarDays]]:[])];
   const canViewPage = page==='attendance' || visibleModules.includes(page) || (page==='schedule'&&canSchedule(profile,data,'visita',null)) || nav.some(([id])=>id===page);
-  const signOut=async()=>{await api.logout();setProfile(null);setData(blank);setPage('home');setMenu(false);};
+  const signOut=async()=>{if(!guardNavigation())return;dirtyAttendance.current=false;await api.logout();setProfile(null);setData(blank);setPage('home');setMenu(false);};
   const currentVisit = data.visits.find(v => v.id === visitId);
   return <div className="app-shell"><aside className={`sidebar ${menu ? 'open' : ''}`}><a className="brand" href="#" onClick={e => {
         e.preventDefault();
@@ -170,11 +188,7 @@ function App() {
  <div className="main-shell"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Abrir menú" onClick={() => setMenu(true)}><Menu size={22} /></button><div className="breadcrumb">Asistencia JUPA <ChevronRight size={13} /><b>{page === 'attendance' ? 'Pasar asistencia' : nav.find(n => n[0] === page)?.[1]}</b></div><div className="topbar-right"><span className="today-label"><CalendarDays size={15} />{dateLabel(today(), {
               year: 'numeric'
             })}</span><span className="private-badge"><ShieldCheck size={14} /> Acceso privado</span><button className="button secondary logout-top" aria-label="Cerrar sesión" onClick={signOut}><LogOut size={18}/><span>Salir</span></button></div></header>
- {api.isDemo() && <div className="demo-banner"><span><span className="demo-dot" /> Vista de prueba · datos ficticios guardados solo en este navegador</span><button onClick={() => {
-          api.enterDemo(profile.role === 'admin' ? 'clase' : 'admin');
-          load();
-          go('home');
-        }}>Probar como {profile.role === 'admin' ? 'cuenta de clase' : 'administrador'} <ArrowRight size={14} /></button></div>}
+ {api.isDemo() && <div className="demo-banner"><span><span className="demo-dot" /> Vista de prueba · datos ficticios guardados solo en este navegador</span><button onClick={signOut}>Elegir otra demostración <ArrowRight size={14}/></button></div>}
  {!online && <div role="alert" className="offline"><WifiOff size={17} /> Sin conexión. Espera a recuperar internet antes de guardar.</div>}
  {error && <div className="global-error" role="alert">{error}<button onClick={() => {
           setError('');
@@ -182,7 +196,7 @@ function App() {
         }}>Reintentar</button><button aria-label="Cerrar aviso" onClick={() => setError('')}><X size={16} /></button></div>}
  <main>{!canViewPage && <p className='info-line'>Esta sección ya no está habilitada para tu cuenta. Selecciona una opción del menú.</p>}{page !== 'attendance' && <div className="page-heading"><div><div className="eyebrow">{page === 'home' ? 'JUNTOS, VISITA A VISITA' : 'ASISTENCIA JUPA'}</div><h1>{header[page]?.[0]}</h1><p>{header[page]?.[1]}</p></div>{canSchedule(profile,data,'visita',null) && ['home', 'visits'].includes(page) && <button className="button primary" onClick={() => setModal({
             type: 'visit'
-          })}><Plus size={18} /> Programar visita</button>}{page === 'people' && <button className="button primary" onClick={() => setModal({
+          })}><Plus size={18} /> Programar visita</button>}{page === 'people' && canPerson(profile,null,'create') && <button className="button primary" onClick={() => setModal({
             type: 'person'
           })}><Plus size={18} /> Agregar participante</button>}</div>}
  {page==='home'&&!visibleModules.includes('visita')&&<section className='panel comparison-panel'><h2>Bienvenido, {profile.name}</h2><p>Selecciona una actividad del menú para registrar asistencia.</p>{!visibleModules.length&&<p>No tienes actividades habilitadas todavía. Contacta al administrador.</p>}</section>}
@@ -194,12 +208,12 @@ function App() {
           visit
         })} />}
  {visibleModules.filter(m=>m!=='visita').map(m=>page===m&&<Activities key={m} type={m} data={data} profile={profile} openVisit={openVisit} onRefresh={refresh}/>)}
- {page === 'attendance' && currentVisit && <Attendance key={currentVisit.id} visit={currentVisit} data={data} profile={profile} className={className} go={go} onRefresh={refresh} notify={notify} setModal={setModal} online={online} />}
+ {page === 'attendance' && currentVisit && <Attendance key={currentVisit.id} visit={currentVisit} data={data} profile={profile} className={className} go={go} onRefresh={refresh} notify={notify} setModal={setModal} online={online} dirtyRef={dirtyAttendance} onMarks={rows=>setData(d=>({...d,attendance:d.attendance.filter(a=>!rows.some(r=>r.visit_id===a.visit_id&&r.person_id===a.person_id)).concat(rows)}))} />}
  {page === 'attendance' && !currentVisit && <Empty icon={CalendarDays} title="No encontramos la visita" text="Vuelve al listado para seleccionar una visita." action={<button className="button primary" onClick={() => go('visits')}>Ver visitas</button>} />}
  {page==='activities'&&<div className="activity-hub">{visibleModules.filter(m=>m!=='visita').map(m=><button className="panel activity-tile" key={m} onClick={()=>go(m)}><CalendarDays/><strong>{MODULES[m]}</strong><span>Programación y asistencia</span></button>)}{canSchedule(profile,data,'visita',null)&&<button className="panel activity-tile" onClick={()=>go('schedule')}><CalendarDays/><strong>Programar visitas</strong><span>Jóvenes y señoritas</span></button>}{!visibleModules.length&&!canSchedule(profile,data,'visita',null)&&<p>No tienes actividades habilitadas todavía.</p>}</div>}
  {page==='schedule'&&canSchedule(profile,data,'visita',null)&&<VisitScheduler data={data} profile={profile} onSaved={saved}/>}
  {page==='bulletin'&&canPublish(profile)&&<BulletinAdmin data={data} profile={profile} onSaved={saved}/>}
- {page==='admin'&&profile.role==='admin'&&<BodiesAdmin data={data} onSaved={saved}/>}
+ {page==='admin'&&profile.role==='admin'&&<><DemoAdmin/><PermissionsAdmin data={data} onSaved={saved}/><ArchivedActivities data={data} onSaved={saved}/><BodiesAdmin data={data} onSaved={saved}/></>}
  {page === 'people' && <People data={data} profile={profile} className={className} setModal={setModal} />}
  {page === 'stats' && modulesFor(profile,data,'export').length>0 && <Stats data={data} profile={profile} className={className} notify={notify} />}
  {page === 'admin' && profile.role === 'admin' && <Admin data={data} profile={profile} onSaved={saved} notify={notify} setModal={setModal} />}
@@ -210,6 +224,7 @@ function App() {
       await saved(action==='reactivated' ? 'Participante reincorporado. Su historial se conserva.' : modal.person ? 'Datos actualizados' : 'Participante agregado');
       if (modal.onPerson && action!=='reactivated') await modal.onPerson(p);
     }} />}
+ {modal?.type==='editActivity'&&<ActivityForm type={modal.visit.activity_type} visit={modal.visit} profile={profile} data={data} onClose={()=>setModal(null)} onSaved={()=>saved('Actividad corregida')}/>}
  {modal?.type === 'activityStatus' && <ActivityStatus visit={modal.visit} data={data} onClose={()=>setModal(null)} onSaved={()=>saved('Estado actualizado')}/>}
  {modal?.type === 'visit' && <VisitForm profile={profile} visit={modal.visit} data={data} onClose={() => setModal(null)} onSaved={() => saved('Visita guardada')} />}
  {modal?.type === 'photo' && <CropPhoto person={modal.person} onClose={() => setModal(null)} onSave={async blob => {
@@ -234,6 +249,8 @@ function Login({
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [localError, setLocalError] = useState('');
+  const [demos,setDemos]=useState([]),[chooseDemo,setChooseDemo]=useState(false);
+  useEffect(()=>{api.demoOptions().then(setDemos);},[]);
   const submit = async e => {
     e.preventDefault();
     setBusy(true);
@@ -255,7 +272,7 @@ function Login({
       setBusy(false);
     }
   };
-  return <div className="login-page"><div className="login-art"><span className="login-kicker">JUVENTUD UNIDA DE PUENTE ALTO</span><div className="login-message"><div className="login-symbol"><Church size={54} strokeWidth={1} /></div><h1>Por Una JUPA<br />Conforme al Corazón de Cristo.</h1><p>Un espacio para acompañar a nuestra juventud,<br className="desktop" />Al servicio del Señor.🙌</p></div><span className="login-bottom">ASISTENCIA JUPA <span>·</span> PUENTE ALTO</span></div><div className="login-panel"><div className="login-card"><img className="login-logo" src="/logo-completo.webp" alt="JUPA · Juventud Unida de Puente Alto" /><div className="eyebrow">BIENVENIDO A ASISTENCIA JUPA</div><h2>{recovery ? 'Crea una nueva contraseña' : 'Cada visita cuenta.'}</h2><p className="muted">{recovery ? 'Utiliza al menos 12 caracteres.' : 'Ingresa para registrar y acompañar a nuestra juventud.'}</p><form onSubmit={submit}>{!recovery && <Field label="Usuario"><input type="text" value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required placeholder="usuario.jupa" disabled={!api.configured} /></Field>}<Field label={recovery ? 'Nueva contraseña' : 'Contraseña'}><input type="password" value={password} minLength={recovery ? 12 : undefined} onChange={e => setPassword(e.target.value)} autoComplete={recovery ? 'new-password' : 'current-password'} required placeholder="Tu contraseña" disabled={!api.configured} /></Field><Button className="button primary full" busy={busy || loading} disabled={!api.configured} type="submit">{recovery ? 'Guardar contraseña' : 'Ingresar'} <ArrowRight size={18} /></Button></form>{(error || localError) && <p role="alert" className="form-error">{localError || error}</p>}{message && <p role="status" className="info-line">{message}</p>}{api.configured && !recovery && <button className="text-button recovery" onClick={() => { setMessage('Solicita al administrador restablecer tu contraseña.'); }}>Olvidé mi contraseña</button>}{api.demoAllowed && !recovery && <div className="demo-entry"><span>CONOCE LA APLICACIÓN</span><button className="button secondary full" onClick={onDemo}>Explorar versión de prueba <ArrowUpRight size={17} /></button><small>Datos ficticios. Puedes probar los flujos sin afectar registros reales.</small></div>}<a className="button secondary full" href="/avisos">Ver Avisos JUPA sin iniciar sesión</a><div className="login-lock"><LockKeyhole size={14} /> Acceso exclusivo para encargados autorizados</div></div></div></div>;
+  return <div className="login-page"><div className="login-art"><span className="login-kicker">JUVENTUD UNIDA DE PUENTE ALTO</span><div className="login-message"><div className="login-symbol"><Church size={54} strokeWidth={1} /></div><h1>Por Una JUPA<br />Conforme al Corazón de Cristo.</h1><p>Un espacio para acompañar a nuestra juventud,<br className="desktop" />Al servicio del Señor.🙌</p></div><span className="login-bottom">ASISTENCIA JUPA <span>·</span> PUENTE ALTO</span></div><div className="login-panel"><div className="login-card"><img className="login-logo" src="/logo-completo.webp" alt="JUPA · Juventud Unida de Puente Alto" /><div className="eyebrow">BIENVENIDO A ASISTENCIA JUPA</div><h2>{recovery ? 'Crea una nueva contraseña' : 'Cada visita cuenta.'}</h2><p className="muted">{recovery ? 'Utiliza al menos 12 caracteres.' : 'Ingresa para registrar y acompañar a nuestra juventud.'}</p><form onSubmit={submit}>{!recovery && <Field label="Usuario"><input type="text" value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required placeholder="usuario.jupa" disabled={!api.configured} /></Field>}<Field label={recovery ? 'Nueva contraseña' : 'Contraseña'}><input type="password" value={password} minLength={recovery ? 12 : undefined} onChange={e => setPassword(e.target.value)} autoComplete={recovery ? 'new-password' : 'current-password'} required placeholder="Tu contraseña" disabled={!api.configured} /></Field><Button className="button primary full" busy={busy || loading} disabled={!api.configured} type="submit">{recovery ? 'Guardar contraseña' : 'Ingresar'} <ArrowRight size={18} /></Button></form>{(error || localError) && <p role="alert" className="form-error">{localError || error}</p>}{message && <p role="status" className="info-line">{message}</p>}{api.configured && !recovery && <button className="text-button recovery" onClick={() => { setMessage('Solicita al administrador restablecer tu contraseña.'); }}>Olvidé mi contraseña</button>}{demos.length>0 && !recovery && <div className="demo-entry"><span>CONOCE LA APLICACIÓN</span><button className="button secondary full" onClick={()=>setChooseDemo(!chooseDemo)}>Explorar versión de prueba <ArrowUpRight size={17} /></button>{chooseDemo&&demos.map(role=><button className='button secondary full' key={role} onClick={()=>onDemo(role)}>{PROFILE_ROLES[role]}</button>)}<small>Datos ficticios. Puedes probar los flujos sin afectar registros reales.</small></div>}<a className="button secondary full" href="/avisos">Ver Avisos JUPA sin iniciar sesión</a><div className="login-lock"><LockKeyhole size={14} /> Acceso exclusivo para encargados autorizados</div></div></div></div>;
 }
 function Metric({
   icon: Icon,
@@ -330,58 +347,46 @@ function Attendance({
   onRefresh,
   notify,
   setModal,
-  online
+  online, dirtyRef, onMarks
 }) {
   const [search, setSearch] = useState(''),
     [classFilter, setClassFilter] = useState(''),
     [view, setView] = useState('list'),
     [presentOnly, setPresentOnly] = useState(false),
     [allGroups, setAllGroups] = useState(false),
-    [pending, setPending] = useState(new Set()),
+    [draft,setDraft]=useState({}),[saving,setSaving]=useState(false),[confirmedMarks,setConfirmedMarks]=useState([]),
     [failure, setFailure] = useState('');
   const frozenRank = useRef(Object.fromEntries(data.people.map(p => [p.id, data.attendance.filter(a => a.person_id === p.id && a.present && data.visits.some(v => v.id === a.visit_id && v.group === visit.group && v.date < visit.date)).length])));
   const editable = canEdit(visit, profile.role) && visit.status !== 'suspended' && canActivity(profile,data,visit.activity_type||'visita',visit.class_id,'manage');
-  const marks = data.attendance.filter(a => a.visit_id === visit.id),
+  const serverMarks=data.attendance.filter(a=>a.visit_id===visit.id);
+  const savedMarks=[...new Map([...serverMarks,...confirmedMarks].sort((a,b)=>a.version-b.version).map(a=>[a.person_id,a])).values()];
+  const marks = effectiveMarks(savedMarks,draft),
     count = marks.filter(a => a.present).length;
   const assigned = new Set(data.responsibilities.filter(r => r.visit_id === visit.id).flatMap(r => [r.person_id, r.actual_person_id]));
-  const people = data.people.filter(p => (eligiblePerson(visit,p) || marks.some(a=>a.person_id===p.id&&a.present)) && (p.active || marks.some(a => a.person_id === p.id && a.present)) && (visit.group==='Todos' || allGroups || groupOf(p.category) === visit.group || assigned.has(p.id) || marks.some(a => a.person_id === p.id && a.present)) && normalize(fullName(p)).includes(normalize(search)) && (!classFilter || p.class_id === classFilter) && (!presentOnly || marks.some(a => a.person_id === p.id && a.present))).sort((a, b) => (frozenRank.current[b.id] || 0) - (frozenRank.current[a.id] || 0) || fullName(a).localeCompare(fullName(b)));
-  const toggle = async (p, explicit) => {
-    if (!editable || pending.has(p.id)) return;
-    const mark = marks.find(a => a.person_id === p.id);
-    setFailure('');
-    setPending(s => new Set(s).add(p.id));
-    try {
-      await api.saveAttendance(visit, p, explicit ?? !mark?.present, mark?.version || 0);
-      await onRefresh();
-      notify(explicit ?? !mark?.present ? 'Asistencia guardada' : 'Marca retirada');
-    } catch (e) {
-      setFailure(`${fullName(p)}: ${e.message}`);
-      await onRefresh().catch(() => {});
-    } finally {
-      setPending(s => {
-        const n = new Set(s);
-        n.delete(p.id);
-        return n;
-      });
-    }
-  };
-  return <>{canActivity(profile,data,visit.activity_type||'visita',visit.class_id,'manage') && canEdit(visit,profile.role) && <button className='button secondary activity-status-button' onClick={()=>setModal({type:'activityStatus',visit})}>Estado y lugar: {({pending:'Pendiente',held:'Realizada',suspended:'Suspendida'})[visit.status||'pending']}</button>}<p className='eyebrow'>{activityLabel(visit)} · Lugar: {className(visit.venue_class_id||visit.class_id)}</p><button className="back-link" onClick={() => go((visit.activity_type||'visita')==='visita'?'visits':visit.activity_type)}><ChevronLeft size={17} /> Volver al calendario</button><div className="attendance-heading"><div><GroupBadge group={visit.group} /><h1>{className(visit.class_id)}</h1><p><CalendarDays size={17} />{dateLabel(visit.date, {
+  const people = data.people.filter(p => (eligiblePerson(visit,p,data) || marks.some(a=>a.person_id===p.id&&a.present)) && (p.active || marks.some(a => a.person_id === p.id && a.present)) && (visit.group==='Todos' || allGroups || groupOf(p.category) === visit.group || assigned.has(p.id) || marks.some(a => a.person_id === p.id && a.present)) && normalize(fullName(p)).includes(normalize(search)) && (!classFilter || p.class_id === classFilter) && (!presentOnly || marks.some(a => a.person_id === p.id && a.present))).sort((a, b) => (frozenRank.current[b.id] || 0) - (frozenRank.current[a.id] || 0) || fullName(a).localeCompare(fullName(b)));
+  const pendingCount=Object.keys(draft).length;
+  useEffect(()=>{dirtyRef.current=pendingCount>0;const warn=e=>{if(dirtyRef.current){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>{window.removeEventListener('beforeunload',warn);dirtyRef.current=false;};},[pendingCount]);
+  const toggle=(p,explicit)=>{if(!editable||saving)return;setFailure('');setDraft(d=>toggleDraft(d,savedMarks,p.id,explicit));};
+  const save=async()=>{setSaving(true);setFailure('');try{const rows=await api.saveAttendanceBatch(visit,Object.values(draft).map(({person_id,present,version})=>({person_id,present,version})));setConfirmedMarks(old=>[...old,...rows]);onMarks(rows);setDraft({});dirtyRef.current=false;notify('Asistencia guardada');}catch(e){setFailure(e.message);try{const latest=await api.attendanceFor(visit.id);setConfirmedMarks(latest);onMarks(latest);}catch{}}finally{setSaving(false);}};
+  const conflicts=draftConflicts(savedMarks,draft);
+  return <>{profile.role==='admin'&&<div className="activity-admin-actions"><button className="button secondary" onClick={()=>setModal({type:(visit.activity_type||'visita')==='visita'?'visit':'editActivity',visit})}>Corregir fecha o destino</button><button className="button secondary" onClick={async()=>{if(!window.confirm('¿Eliminar esta actividad del calendario y las estadísticas? Se podrá restaurar desde Administración.'))return;try{await api.archiveActivity(visit);setDraft({});dirtyRef.current=false;await onRefresh();go('activities');}catch(e){setFailure(e.message);}}}>Eliminar actividad</button></div>}{canActivity(profile,data,visit.activity_type||'visita',visit.class_id,'manage') && canEdit(visit,profile.role) && <button className='button secondary activity-status-button' onClick={()=>setModal({type:'activityStatus',visit})}>Estado y lugar: {({pending:'Pendiente',held:'Realizada',suspended:'Suspendida'})[visit.status||'pending']}</button>}<p className='eyebrow'>{activityLabel(visit)} · Lugar: {className(visit.venue_class_id||visit.class_id)}</p><button className="back-link" onClick={() => go((visit.activity_type||'visita')==='visita'?'visits':visit.activity_type)}><ChevronLeft size={17} /> Volver al calendario</button><div className="attendance-heading"><div><GroupBadge group={visit.group} /><h1>{className(visit.class_id)}</h1><p><CalendarDays size={17} />{dateLabel(visit.date, {
             weekday: 'long',
             year: 'numeric'
-          })}</p></div><div className="attendance-count"><CheckCheck size={25} /><div><b>{count}</b><span>presentes</span></div></div></div><div className="attendance-status"><span className={online ? 'save-indicator' : 'muted'}><span />{pending.size ? 'Guardando…' : online ? 'Actualización automática' : 'Sin conexión'}</span><span><Clock3 size={14} />{profile.role === 'admin' ? 'Puedes corregir esta visita como administrador' : editable ? `Editable hasta el ${dateLabel(addDays(visit.date, 21))}` : visit.date > today() ? 'La asistencia abre el día de la visita' : 'Plazo de edición cerrado'}</span></div>{!editable && <div className="notice"><LockKeyhole size={17} /> {visit.date > today() ? 'Esta visita aún no comienza. Puedes consultar sus responsables.' : 'Han transcurrido más de 21 días. Solo el administrador puede corregir este registro.'}</div>}{visit.notes && <div className="notice">{visit.notes}</div>}
- <section className="panel attendance-panel"><div className="section-head"><div><h2>Pasar asistencia</h2><p>Marca a quienes llegaron. Los más frecuentes aparecen primero.</p></div>{editable && <button className="button primary" aria-label="Agregar participante" onClick={() => setModal({
+          })}</p></div><div className="attendance-count"><CheckCheck size={25} /><div><b>{count}</b><span>presentes</span></div></div></div><div className="attendance-status"><span className={online ? 'save-indicator' : 'muted'}><span />{saving ? 'Guardando…' : pendingCount ? pendingCount+' cambios sin guardar' : online ? 'Sin cambios pendientes' : 'Sin conexión'}</span><span><Clock3 size={14} />{profile.role === 'admin' ? 'Puedes corregir esta visita como administrador' : editable ? `Editable hasta el ${dateLabel(addDays(visit.date, 21))}` : visit.date > today() ? 'La asistencia abre el día de la visita' : 'Plazo de edición cerrado'}</span></div>{!editable && <div className="notice"><LockKeyhole size={17} /> {visit.date > today() ? 'Esta visita aún no comienza. Puedes consultar sus responsables.' : 'Han transcurrido más de 21 días. Solo el administrador puede corregir este registro.'}</div>}{visit.notes && <div className="notice">{visit.notes}</div>}
+ {editable&&<div className="attendance-savebar"><strong>{pendingCount?pendingCount+' cambios pendientes':'Sin cambios pendientes'}</strong><Button busy={saving} disabled={!pendingCount||!online||conflicts.length>0} className="button primary" onClick={save}>Guardar asistencia</Button>{pendingCount>0&&<button className="text-button" disabled={saving} onClick={()=>{if(window.confirm('¿Descartar las marcas sin guardar?'))setDraft({});}}>Descartar</button>}</div>}{conflicts.length>0&&<div role="alert" className="form-error">Otro encargado cambió {conflicts.length} registros. Conservamos tus marcas. <button className="text-button" onClick={()=>setDraft(d=>Object.fromEntries(Object.entries(d).filter(([id])=>!conflicts.some(c=>c.person_id===id))))}>Usar lo guardado por el otro encargado en esos registros</button></div>}
+ <section className="panel attendance-panel"><div className="section-head"><div><h2>Pasar asistencia</h2><p>Marca a quienes llegaron. Los más frecuentes aparecen primero.</p></div>{editable && canPerson(profile,visit.class_id,'create') && <button className="button primary" aria-label="Agregar participante" onClick={() => setModal({
           type: 'person',
           visit,
           onPerson: p => toggle(p, true)
         })}><Plus size={17} /><span>Agregar participante</span></button>}</div><div className="attendance-filters"><label className="search-box"><Search size={19} /><input placeholder="Buscar por nombre o apellido…" aria-label="Buscar participante" value={search} onChange={e => setSearch(e.target.value)} />{search && <button onClick={() => setSearch('')} aria-label="Limpiar búsqueda"><X size={16} /></button>}</label><select aria-label="Filtrar por clase" value={classFilter} onChange={e => setClassFilter(e.target.value)}><option value="">Todas las clases</option>{data.classes.filter(c=>profile.role!=='clase'||c.id===profile.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><div className="view-toggle"><button aria-label="Ver listado" aria-pressed={view === 'list'} className={view === 'list' ? 'selected' : ''} onClick={() => setView('list')}><LayoutList size={20} /></button><button aria-label="Buscar por fotografía" aria-pressed={view === 'photos'} className={view === 'photos' ? 'selected' : ''} onClick={() => setView('photos')}><Grid2X2 size={19} /></button></div></div><div className="list-subhead"><span>{people.length} participantes</span><div><label><input type="checkbox" checked={allGroups} onChange={e => setAllGroups(e.target.checked)} /> Otros grupos</label><label><input type="checkbox" checked={presentOnly} onChange={e => setPresentOnly(e.target.checked)} /> Solo presentes</label></div></div>{failure && <div className="form-error" role="alert">{failure} <button className="text-button" onClick={() => setFailure('')}>Cerrar</button></div>}
  <div className={view === 'photos' ? 'photo-grid' : 'attendance-list'}>{people.map(p => {
           const present = Boolean(marks.find(a => a.person_id === p.id)?.present),
-            busy = pending.has(p.id);
-          return <div key={p.id} className={`person-row ${present ? 'present' : ''} ${view === 'photos' ? 'photo-card' : ''}`}><button className="person-mark" disabled={!editable || busy || !online} onClick={() => toggle(p)} aria-pressed={present} aria-label={`${present ? 'Retirar' : 'Marcar'} asistencia de ${fullName(p)}`}><Avatar person={p} large={view === 'photos'} /><span className="person-info"><strong>{fullName(p)}</strong><small>{className(p.class_id)}</small><span className="person-category">{p.category}</span></span><span className={`attendance-check ${present ? 'checked' : ''}`}>{busy ? <LoaderCircle size={18} className="spin" /> : present ? <Check size={19} /> : null}</span></button><button className="photo-action icon-button" aria-label={`Fotografía de ${fullName(p)}`} title="Agregar o cambiar foto" onClick={() => setModal({
+            busy = saving;
+          return <div key={p.id} className={`person-row ${present ? 'present' : ''} ${view === 'photos' ? 'photo-card' : ''}`}><button className="person-mark" disabled={!editable || busy} onClick={() => toggle(p)} aria-pressed={present} aria-label={`${present ? 'Retirar' : 'Marcar'} asistencia de ${fullName(p)}`}><Avatar person={p} large={view === 'photos'} /><span className="person-info"><strong>{fullName(p)}</strong><small>{className(p.class_id)}</small><span className="person-category">{p.category}</span></span><span className={`attendance-check ${present ? 'checked' : ''}`}>{busy ? <LoaderCircle size={18} className="spin" /> : present ? <Check size={19} /> : null}</span></button>{canPerson(profile,p.class_id,'photo')&&<button className="photo-action icon-button camera-left" aria-label={`Fotografía de ${fullName(p)}`} title="Agregar o cambiar foto" onClick={() => setModal({
               type: 'photo',
               person: p
-            })}><Camera size={17} /></button></div>;
-        })}</div>{!people.length && <Empty icon={Search} title="No encontramos participantes" text="Prueba con otro nombre o clase. También puedes agregar a alguien nuevo." />}<div className="list-footer"><ShieldCheck size={15} /> Cada marca se guarda por separado para trabajar entre varios encargados.</div></section>
+            })}><Camera size={17} /></button>}</div>;
+        })}</div>{!people.length && <Empty icon={Search} title="No encontramos participantes" text="Prueba con otro nombre o clase. También puedes agregar a alguien nuevo." />}<div className="list-footer"><ShieldCheck size={15} /> Marca con rapidez y pulsa Guardar asistencia. Solo se envían tus cambios.</div></section>
  {(visit.activity_type||'visita')==='visita' && <section className="panel responsibility-panel"><div className="section-head"><div><h2>Responsables de la visita</h2><p>Confirma qué ocurrió con cada función.</p></div>{canSchedule(profile,data,'visita',visit.class_id) && <button className="text-button" onClick={() => setModal({
           type: 'visit',
           visit
@@ -404,10 +409,10 @@ function People({
     [cl, setCl] = useState(''),
     [inactive, setInactive] = useState(false);
   const people = data.people.filter(p => (inactive || p.active) && normalize(fullName(p)).includes(normalize(q)) && (!cl || p.class_id === cl)).sort((a, b) => fullName(a).localeCompare(fullName(b)));
-  return <><div className="filter-bar"><label className="search-box"><Search size={18} /><input aria-label="Buscar participante" placeholder="Buscar nombre o apellido…" value={q} onChange={e => setQ(e.target.value)} /></label><select value={cl} aria-label="Clase" onChange={e => setCl(e.target.value)}><option value="">Todas las clases</option>{data.classes.filter(c=>profile.role!=='clase'||c.id===profile.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><label className="check-label"><input type="checkbox" checked={inactive} onChange={e => setInactive(e.target.checked)} /> Incluir inactivos</label></div><div className="people-count">{people.length} participantes</div><div className="people-grid">{people.map(p => <article className={`participant-card ${!p.active ? 'inactive' : ''}`} key={p.id}><div className="participant-top"><Avatar person={p} large /><button className="icon-button" aria-label={`Foto de ${fullName(p)}`} onClick={() => setModal({
+  return <><div className="filter-bar"><label className="search-box"><Search size={18} /><input aria-label="Buscar participante" placeholder="Buscar nombre o apellido…" value={q} onChange={e => setQ(e.target.value)} /></label><select value={cl} aria-label="Clase" onChange={e => setCl(e.target.value)}><option value="">Todas las clases</option>{data.classes.filter(c=>profile.role!=='clase'||c.id===profile.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><label className="check-label"><input type="checkbox" checked={inactive} onChange={e => setInactive(e.target.checked)} /> Incluir inactivos</label></div><div className="people-count">{people.length} participantes</div><div className="people-grid">{people.map(p => <article className={`participant-card ${!p.active ? 'inactive' : ''}`} key={p.id}><div className="participant-top"><Avatar person={p} large />{canPerson(profile,p.class_id,'photo')&&<button className="icon-button" aria-label={`Foto de ${fullName(p)}`} onClick={() => setModal({
             type: 'photo',
             person: p
-          })}><Camera size={18} /></button></div><h3>{fullName(p)}</h3><p><MapPin size={14} />{className(p.class_id)}</p><span className="badge neutral">{p.category}</span>{p.birth_date&&<small>{ageAt(p.birth_date,today())} años · {dateLabel(p.birth_date,{year:'numeric'})}</small>}{!p.active && <span className="badge neutral">Inactivo</span>}<div className="participant-actions">{canPerson(profile,p.class_id,'edit') ? <><button className="text-button" onClick={() => setModal({
+          })}><Camera size={18} /></button>}</div><h3>{fullName(p)}</h3><p><MapPin size={14} />{className(p.class_id)}</p><span className="badge neutral">{p.category}</span>{p.birth_date&&<small>{ageAt(p.birth_date,today())} años · {dateLabel(p.birth_date,{year:'numeric'})}</small>}{!p.active && <span className="badge neutral">Inactivo</span>}<div className="participant-actions">{canPerson(profile,p.class_id,'edit') ? <><button className="text-button" onClick={() => setModal({
               type: 'history',
               person: p
             })}><History size={15} /> Historial</button><button className="text-button" onClick={() => setModal({

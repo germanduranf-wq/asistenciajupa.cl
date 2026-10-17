@@ -1,3 +1,4 @@
+import {PersonPicker} from './person-picker.jsx';
 import {ReincorporateForm} from './reincorporate.jsx';
 import {canPerson,ageAt} from './access.mjs';
 import React, { useState } from 'react';
@@ -106,19 +107,16 @@ export function VisitForm({
       setBusy(false);
     }
   };
-  return <Modal title={visit ? 'Editar visita' : 'Programar visita'} subtitle="Prepara el encuentro y asigna a sus responsables." onClose={busy ? () => {} : onClose}><form onSubmit={submit}><div className="modal-body"><div className="form-grid"><Field label="Fecha *"><input type="date" value={values.date} disabled={!!visit} required onChange={e => setValues({
+  return <Modal title={visit ? 'Editar visita' : 'Programar visita'} subtitle="Prepara el encuentro y asigna a sus responsables." onClose={busy ? () => {} : onClose}><form onSubmit={submit}><div className="modal-body"><div className="form-grid"><Field label="Fecha *"><input type="date" value={values.date} disabled={!!visit && profile?.role!=='admin'} required onChange={e => setValues({
               ...values,
               date: e.target.value
-            })} /></Field><Field label="Grupo *"><select disabled={!!visit} value={values.group} onChange={e => setValues({
+            })} /></Field><Field label="Grupo *"><select disabled={!!visit && profile?.role!=='admin'} value={values.group} onChange={e => setValues({
               ...values,
               group: e.target.value
-            })}><option>Jóvenes</option><option>Señoritas</option></select></Field></div><Field label="Clase o local de destino *"><select disabled={!!visit} required value={values.class_id} onChange={e => setValues({
+            })}><option>Jóvenes</option><option>Señoritas</option></select></Field></div><Field label="Clase o local de destino *"><select disabled={!!visit && profile?.role!=='admin'} required value={values.class_id} onChange={e => setValues({
             ...values,
             class_id: e.target.value
-          })}><option value="">Seleccionar destino</option>{data.classes.filter(c => c.active || c.id === values.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="Hora (opcional)"><input type="time" value={values.scheduled_time||''} onChange={e=>setValues({...values,scheduled_time:e.target.value})}/></Field>{profile?.role!=='secretaria' && <><h3 className="form-section-title">Responsables <span>Opcionales</span></h3>{ROLES.map(role => <Field label={role} key={role}><select value={assignments[role]} onChange={e => setAssignments({
-            ...assignments,
-            [role]: e.target.value
-          })}><option value="">Por definir</option>{data.people.filter(p => p.active || p.id === assignments[role]).sort((a, b) => fullName(a).localeCompare(fullName(b))).map(p => <option key={p.id} value={p.id}>{fullName(p)}</option>)}</select></Field>)}</>}<Field label="Observaciones"><textarea rows={2} maxLength={1000} value={values.notes} onChange={e => setValues({
+          })}><option value="">Seleccionar destino</option>{data.classes.filter(c => c.active || c.id === values.class_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="Hora (opcional)"><input type="time" value={values.scheduled_time||''} onChange={e=>setValues({...values,scheduled_time:e.target.value})}/></Field>{profile?.role!=='secretaria' && <><h3 className="form-section-title">Responsables <span>Opcionales</span></h3>{ROLES.map(role => <Field label={role} key={role}><PersonPicker label={role} people={data.people.filter(p=>p.active||p.id===assignments[role])} value={assignments[role]} onChange={id=>setAssignments({...assignments,[role]:id})}/></Field>)}</>}<Field label="Observaciones"><textarea rows={2} maxLength={1000} value={values.notes} onChange={e => setValues({
             ...values,
             notes: e.target.value
           })} placeholder="Información útil para los encargados" /></Field>{error && <div role="alert" className="form-error">{error}</div>}</div><div className="modal-foot"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancelar</button><Button type="submit" className="button primary" busy={busy}><Check size={17} />{visit ? 'Guardar cambios' : 'Programar visita'}</Button></div></form></Modal>;
@@ -146,10 +144,7 @@ export function ResponsibilityForm({
     }}><div className="modal-body"><Field label="Resultado"><select value={v.outcome} onChange={e => setV({
             ...v,
             outcome: e.target.value
-          })}>{OUTCOMES.map(s => <option key={s}>{s}</option>)}</select></Field><Field label="Quién realizó finalmente la función" hint="Selecciona también al responsable original si fue quien la realizó."><select value={v.actual_person_id || ''} onChange={e => setV({
-            ...v,
-            actual_person_id: e.target.value || null
-          })}><option value="">Sin confirmar</option>{data.people.map(p => <option key={p.id} value={p.id}>{fullName(p)}</option>)}</select></Field><Field label="Observación o justificación"><textarea maxLength={1000} value={v.note || ''} rows={3} onChange={e => setV({
+          })}>{OUTCOMES.map(s => <option key={s}>{s}</option>)}</select></Field><Field label="Quién realizó finalmente la función" hint="Selecciona también al responsable original si fue quien la realizó."><PersonPicker label="Quién realizó la función" people={data.people} value={v.actual_person_id} onChange={id=>setV({...v,actual_person_id:id||null})}/></Field><Field label="Observación o justificación"><textarea maxLength={1000} value={v.note || ''} rows={3} onChange={e => setV({
             ...v,
             note: e.target.value
           })} /></Field><p className="hint">La presencia se marca por separado en la lista de asistencia.</p>{error && <div role="alert" className="form-error">{error}</div>}</div><div className="modal-foot"><Button className="button primary" busy={busy} type="submit">Guardar resultado</Button></div></form></Modal>;
