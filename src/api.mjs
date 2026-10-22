@@ -442,10 +442,10 @@ export async function visitResponsibilities(month){
 }
 export async function issueLetters(visitId,month){
  if(!demo)return result(await db.rpc('emitir_cartas',{p_visita:visitId||null,p_mes:month?month+'-01':null}));
- const d=readDemo();d.letters||=[];const result=[];
+ const d=readDemo();d.letters||=[];const issuedLetters=[];
  for(const v of d.visits.filter(v=>!v.eliminado_el&&v.status!=='suspended'&&(v.activity_type||'visita')==='visita'&&(visitId?v.id===visitId:v.date.startsWith(month))))for(const r of d.responsibilities.filter(r=>r.visit_id===v.id)){
   let letter=d.letters.find(x=>x.visit_id===v.id&&x.person_id===r.person_id&&x.role===r.role);
   if(!letter){letter={visit_id:v.id,person_id:r.person_id,role:r.role,folio:'DEMO AJ '+String(d.letters.length+1).padStart(2,'0'),issued:new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago'}).format(new Date())};d.letters.push(letter);}
-  const p=d.people.find(p=>p.id===r.person_id);result.push({...letter,name:`${p?.first_name||''} ${p?.last_name||''}`,class_name:d.classes.find(c=>c.id===v.class_id)?.name,date:v.date,group:v.group});
- }writeDemo(d);return result;
+  const p=d.people.find(p=>p.id===r.person_id);issuedLetters.push({...letter,name:`${p?.first_name||''} ${p?.last_name||''}`,class_name:d.classes.find(c=>c.id===v.class_id)?.name,date:v.date,group:v.group});
+ }writeDemo(d);return issuedLetters;
 }
