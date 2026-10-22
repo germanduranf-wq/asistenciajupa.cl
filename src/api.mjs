@@ -1,5 +1,5 @@
 import {database} from './database.mjs';
-import { canPerson, canActivity, eligiblePerson, MODULES, canSchedule } from './access.mjs';
+import { canPerson, canActivity, eligiblePerson, localActivity, MODULES, canSchedule } from './access.mjs';
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { createDemo } from './demo.mjs';
@@ -43,7 +43,7 @@ export async function fetchAll() {
     const d = readDemo(), p = await fetchProfile();
     const visits = d.visits.filter(v => !v.eliminado_el && (canActivity(p,d,v.activity_type || 'visita',v.class_id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)));
     const ids = new Set(visits.filter(v=>canActivity(p,d,v.activity_type||'visita',v.class_id)).map(v => v.id));
-    return { ...d, archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x.class_id)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
+    return { ...d, archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
   }
   const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions', 'bodies', 'bulletin_events', 'bulletin_highlights'];
   const responses = await Promise.all(tables.map(async table => {
@@ -57,6 +57,8 @@ export async function fetchAll() {
     }
   }));
   const data = Object.fromEntries(tables.map((t,i)=>[t,responses[i]]));
+  const historical=result(await db.rpc('miembros_historicos'));
+  data.people.push(...historical.filter(p=>!data.people.some(x=>x.id===p.id)));
   data.archived_visits=data.visits.filter(v=>v.eliminado_el);data.visits=data.visits.filter(v=>!v.eliminado_el);return data;
 }
 export async function fetchProfile() {
@@ -95,7 +97,7 @@ export async function saveAttendance(visit, person, present, version) {
       visit_id: visit.id,
       person_id: person.id,
       present,
-      class_id: old?.class_id || person.class_id,
+      class_id: old?.class_id || (localActivity(visit.activity_type)?visit.class_id:person.class_id),
       category: old?.category || person.category,
       version: version + 1,
       updated_at: new Date().toISOString()
@@ -122,7 +124,7 @@ export async function savePerson(person) {
   delete payload.photo_url;
   if (demo) {
     const prof = await fetchProfile();
-    if (!canPerson(prof,payload.class_id,payload.id ? 'edit' : 'create')) throw Error('No tienes permiso para modificar estos datos.');
+    if (!canPerson(prof,payload,payload.id ? 'edit' : 'create')) throw Error('No tienes permiso para modificar estos datos.');
     const d = readDemo();
     if (payload.rut && d.people.some(p => p.id !== payload.id && p.rut === payload.rut)) throw Error('Este RUT ya está registrado.');
     payload.id ||= crypto.randomUUID();
@@ -383,7 +385,7 @@ export async function setActivityStatus(v, status, reason, venue) {
 export async function reactivatePerson(id) {
   if (demo) {
     const d=readDemo(), profile=await fetchProfile(), person=d.people.find(p=>p.id===id);
-    if (!person || !canPerson(profile,person.class_id,'reactivate')) throw Error('No tienes permiso para reincorporar a este participante.');
+    if (!person || !canPerson(profile,person,'reactivate')) throw Error('No tienes permiso para reincorporar a este participante.');
     if (person.merged_into) throw Error('Este registro fue fusionado. Utiliza la ficha que se conservó.');
     const saved={...person,active:true}; d.people=d.people.map(p=>p.id===id?saved:p); writeDemo(d); return saved;
   }
@@ -412,8 +414,8 @@ export async function publicBulletin(month) {
 export async function saveAttendanceBatch(visit, changes) {
  if(!demo)return result(await db.rpc('guardar_asistencias',{p_visit:visit.id,p_changes:changes}));
  const d=readDemo(),p=await fetchProfile();if(!canEdit(visit,p.role)||!canActivity(p,d,visit.activity_type||'visita',visit.class_id,'manage'))throw Error('No tienes permiso para guardar.');
- for(const c of changes){const old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);if((old?.version||0)!==c.version)throw Error('Otro encargado modificó una marca. Revisa los cambios pendientes.');}
- const saved=changes.map(c=>{const person=d.people.find(p=>p.id===c.person_id),old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);return {...old,visit_id:visit.id,person_id:person.id,present:c.present,class_id:old?.class_id||person.class_id,category:old?.category||person.category,version:c.version+1,updated_at:new Date().toISOString()};});
+ for(const c of changes){if(c.present&&localActivity(visit.activity_type)&&d.attendance.some(a=>a.person_id===c.person_id&&a.present&&a.visit_id!==visit.id&&d.visits.some(v=>v.id===a.visit_id&&v.date===visit.date&&v.activity_type===visit.activity_type&&!v.eliminado_el&&v.status!=='suspended')))throw Error('Esta persona ya está presente en otra clase para el mismo servicio.');const old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);if((old?.version||0)!==c.version)throw Error('Otro encargado modificó una marca. Revisa los cambios pendientes.');}
+ const saved=changes.map(c=>{const person=d.people.find(p=>p.id===c.person_id),old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);return {...old,visit_id:visit.id,person_id:person.id,present:c.present,class_id:old?.class_id||(localActivity(visit.activity_type)?visit.class_id:person.class_id),category:old?.category||person.category,version:c.version+1,updated_at:new Date().toISOString()};});
  d.attendance=d.attendance.filter(a=>!saved.some(b=>b.visit_id===a.visit_id&&b.person_id===a.person_id)).concat(saved);if(changes.some(c=>c.present))d.visits=d.visits.map(v=>v.id===visit.id?{...v,status:'held'}:v);writeDemo(d);return saved;
 }
 export async function attendanceFor(id){if(demo)return readDemo().attendance.filter(a=>a.visit_id===id);return result(await db.from('attendance').select('*').eq('visit_id',id));}
@@ -423,3 +425,27 @@ export async function adminDemoOptions(){if(demo)return ['admin','jefatura','sec
 export async function setDemoOption(perfil,habilitada){if(demo)return;result(await db.from('demostraciones').update({habilitada}).eq('perfil',perfil));}
 export async function savePermissions(id,permissions){if(demo){const d=readDemo();d.account_permissions=d.account_permissions.filter(p=>p.profile_id!==id).concat(permissions.map((p,i)=>({...p,id:'demo-perm-'+i,profile_id:id})));writeDemo(d);return;}result(await db.rpc('guardar_permisos',{p_usuario:id,p_permisos:permissions}));}
 export async function setModule(code,enabled){if(demo){const d=readDemo();d.activity_modules=d.activity_modules.map(m=>m.code===code?{...m,enabled}:m);writeDemo(d);return;}result(await db.from('activity_modules').update({enabled}).eq('code',code));}
+
+export async function otherAttendance(id){
+ if(!demo)return result(await db.rpc('presencias_otras_clases',{p_actividad:id}));
+ const d=readDemo(),v=d.visits.find(v=>v.id===id);
+ if(!v||!localActivity(v.activity_type))return [];
+ return d.attendance.filter(a=>a.present&&a.visit_id!==id&&d.visits.some(x=>x.id===a.visit_id&&x.date===v.date&&x.activity_type===v.activity_type&&!x.eliminado_el&&x.status!=='suspended')).map(a=>({person_id:a.person_id,clase_presente:d.classes.find(c=>c.id===a.class_id)?.name}));
+}
+export async function memberHistory(id,from,to){
+ if(!demo)return result(await db.rpc('historial_miembro',{p_miembro:id,p_desde:from,p_hasta:to}));
+ const d=readDemo();return d.attendance.filter(a=>a.person_id===id&&a.present).flatMap(a=>{const v=d.visits.find(v=>v.id===a.visit_id);return v&&!v.eliminado_el&&v.status!=='suspended'&&v.date>=from&&v.date<=to?[{visit_id:v.id,date:v.date,activity_type:v.activity_type||'visita',group:v.group,destino:d.classes.find(c=>c.id===v.class_id)?.name,clase_contabilizada:d.classes.find(c=>c.id===a.class_id)?.name,category:a.category}]:[];}).sort((a,b)=>b.date.localeCompare(a.date));
+}
+export async function visitResponsibilities(month){
+ if(!demo)return result(await db.rpc('resumen_responsables',{p_mes:month+'-01'}));
+ const d=readDemo();return d.visits.filter(v=>!v.eliminado_el&&(v.activity_type||'visita')==='visita'&&v.date.startsWith(month)).sort((a,b)=>a.date.localeCompare(b.date)).map(v=>({...v,class_name:d.classes.find(c=>c.id===v.class_id)?.name,responsables:d.responsibilities.filter(r=>r.visit_id===v.id).map(r=>({...r,name:(()=>{const p=d.people.find(p=>p.id===r.person_id);return `${p?.first_name||''} ${p?.last_name||''}`.trim();})()}))}));
+}
+export async function issueLetters(visitId,month){
+ if(!demo)return result(await db.rpc('emitir_cartas',{p_visita:visitId||null,p_mes:month?month+'-01':null}));
+ const d=readDemo();d.letters||=[];const result=[];
+ for(const v of d.visits.filter(v=>!v.eliminado_el&&v.status!=='suspended'&&(v.activity_type||'visita')==='visita'&&(visitId?v.id===visitId:v.date.startsWith(month))))for(const r of d.responsibilities.filter(r=>r.visit_id===v.id)){
+  let letter=d.letters.find(x=>x.visit_id===v.id&&x.person_id===r.person_id&&x.role===r.role);
+  if(!letter){letter={visit_id:v.id,person_id:r.person_id,role:r.role,folio:'DEMO AJ '+String(d.letters.length+1).padStart(2,'0'),issued:new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago'}).format(new Date())};d.letters.push(letter);}
+  const p=d.people.find(p=>p.id===r.person_id);result.push({...letter,name:`${p?.first_name||''} ${p?.last_name||''}`,class_name:d.classes.find(c=>c.id===v.class_id)?.name,date:v.date,group:v.group});
+ }writeDemo(d);return result;
+}

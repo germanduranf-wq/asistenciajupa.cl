@@ -10,7 +10,9 @@ export function canActivity(profile, data, module, classId, action = 'view') {
   if (profile.role === 'encargado' && module !== 'visita') return false;
   return (data.account_permissions || []).some(p => p.profile_id === profile.id && p.module === module && p.can_view && (!classId || !p.class_id || p.class_id === classId) && (profile.role !== 'clase' || !p.class_id || p.class_id === profile.class_id) && (action === 'view' || p[`can_${action}`]));
 }
+export const belongsToClass = (p,id) => p.class_id===id || p.secondary_class_id===id;
 export function canPerson(profile, classId, action = 'view') {
+  if(classId && typeof classId==='object'){if(classId.historico)return false;classId=profile?.role==='clase'&&belongsToClass(classId,profile.class_id)?profile.class_id:classId.class_id;}
   if (!profile?.active || profile.must_change_password) return false;
   if (['admin','jefatura','secretaria'].includes(profile.role)) return true;
   if (profile.role === 'encargado') return ['view','create','photo'].includes(action);
@@ -20,7 +22,7 @@ export const canPublish = p => p?.active && !p.must_change_password && ['admin',
 export const canSchedule = (p,d,m,c) => m!=='visita' ? canActivity(p,d,m,c,'manage') : canPublish(p) && d.activity_modules?.some(x=>x.code===m&&x.enabled) && (p.role==='admin' || (d.account_permissions||[]).some(x=>x.profile_id===p.id&&x.module===m&&(!c||!x.class_id||x.class_id===c)&&(x.can_schedule || (p.role==='jefatura'&&x.can_view&&x.can_manage))));
 export const modulesFor = (p,d,action='view') => Object.keys(MODULES).filter(m => canActivity(p,d,m,null,action));
 export const activityLabel = v => MODULES[v?.activity_type || 'visita'];
-export const eligiblePerson = (v,p,data={}) => ['ensayo_coro','evento_coro'].includes(v.activity_type) ? (p.body_ids||[]).some(id=>data.bodies?.some(b=>b.id===id&&b.name==='Coro JUPA')) : localActivity(v.activity_type) ? p.class_id === v.class_id : v.activity_type === 'reunion_encargados' ? ['Encargado de jóvenes','Encargada de señoritas','Ayudante de jóvenes','Ayudante de señoritas'].includes(p.category) : true;
+export const eligiblePerson = (v,p,data={}) => ['ensayo_coro','evento_coro'].includes(v.activity_type) ? (p.body_ids||[]).some(id=>data.bodies?.some(b=>b.id===id&&b.name==='Coro JUPA')) : localActivity(v.activity_type) ? belongsToClass(p,v.class_id) : v.activity_type === 'reunion_encargados' ? ['Encargado de jóvenes','Encargada de señoritas','Ayudante de jóvenes','Ayudante de señoritas'].includes(p.category) : true;
 export function ageAt(birthDate, date) {
   if (!birthDate || !date || birthDate > date) return null;
   return Number(date.slice(0,4)) - Number(birthDate.slice(0,4)) - (date.slice(5) < birthDate.slice(5) ? 1 : 0);

@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {Modal, Field, Button, Avatar} from './ui.jsx';
 import {fullName, normalize} from './domain.mjs';
-import {canPerson} from './access.mjs';
+import {canPerson,belongsToClass} from './access.mjs';
 import {reactivatePerson} from './api.mjs';
 
 export function ReincorporateForm({profile, data, onClose, onNew, onSaved}) {
@@ -9,8 +9,8 @@ export function ReincorporateForm({profile, data, onClose, onNew, onSaved}) {
   const [classId, setClassId] = useState('');
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
-  const inactive = data.people.filter(p => !p.active && !p.merged_into && canPerson(profile,p.class_id,'reactivate'));
-  const people = inactive.filter(p => (!classId || p.class_id===classId) && normalize(fullName(p)).includes(normalize(search)))
+  const inactive = data.people.filter(p => !p.active && !p.merged_into && canPerson(profile,p,'reactivate'));
+  const people = inactive.filter(p => (!classId || belongsToClass(p,classId)) && normalize(fullName(p)).includes(normalize(search)))
     .sort((a,b)=>fullName(a).localeCompare(fullName(b),'es'));
   const restore = async p => {
     setBusy(p.id); setError('');
