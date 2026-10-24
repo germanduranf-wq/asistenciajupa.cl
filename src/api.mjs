@@ -4,7 +4,7 @@ import { canPerson, canActivity, eligiblePerson, localActivity, MODULES, canSche
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { createDemo } from './demo.mjs';
-import { canEdit, upper, cleanRut } from './domain.mjs';
+import { canEdit, titleName, cleanRut } from './domain.mjs';
 const config = window.JUPA_CONFIG || {};
 export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
@@ -132,8 +132,8 @@ export async function saveAttendance(visit, person, present, version) {
 export async function savePerson(person) {
   const payload = {
     ...person,
-    first_name: upper(person.first_name),
-    last_name: upper(person.last_name),
+    first_name: titleName(person.first_name),
+    last_name: titleName(person.last_name),
     rut: cleanRut(person.rut) || null,
     birth_date: person.birth_date || null
   };

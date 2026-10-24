@@ -8,6 +8,7 @@ export const normalize = (s = '') =>
     .replace(/\s+/g, ' ')
     .toUpperCase();
 export const upper = (s = '') => s.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-CL');
+export const titleName = (value = '') => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('es-CL').replace(/(^|[^\p{L}\p{N}])(\p{L})/gu, (_, separator, letter) => separator + letter.toLocaleUpperCase('es-CL'));
 export const groupOf = category => [1, 3, 5, 7].includes(CATEGORIES.indexOf(category)) ? 'Señoritas' : 'Jóvenes';
 export const fullName = p => `${p?.first_name || ''} ${p?.last_name || ''}`.trim();
 export function today(date = new Date()) {

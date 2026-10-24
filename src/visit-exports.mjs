@@ -1,4 +1,4 @@
-import {dateLabel,ROLES,normalize} from './domain.mjs';
+import {dateLabel,ROLES,normalize,titleName} from './domain.mjs';
 export function saveFile(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 const safeName=s=>normalize(s).replace(/[^A-Z0-9 _-]/g,'').replace(/\s+/g,'-');
 export const letterFilename=l=>`${l.date}_${safeName(l.group)}_${safeName(l.class_name)}_${safeName(l.role)}_${safeName(l.name)}_${safeName(l.folio)}.pdf`;
@@ -36,8 +36,8 @@ export async function letterPDF(letter){
   let y=76;const line=size*0.455;
   pdf.setFontSize(size);pdf.setFont('EBGaramond','normal');
   const paragraph=(text,space=4,weight='normal')=>{pdf.setFont('EBGaramond',weight);const lines=pdf.splitTextToSize(text,160);if(draw)pdf.text(lines,25,y,{lineHeightFactor:1.29});y+=lines.length*line+space;};
-  paragraph(`${t.prefix} ${letter.name}`,2,'bold');paragraph(`${t.greeting} en el Señor:`,5);
-  paragraph(`Por la presente le saluda confiando goce de las más ricas bendiciones en Cristo Jesús, junto a su familia y ${t.community} al cual pertenece.`);
+  paragraph(`${t.prefix} ${titleName(letter.name)}`,2,'bold');paragraph(`${t.greeting} en el Señor:`,5);
+  paragraph(`Le saluda confiando goce de las más ricas bendiciones en Cristo Jesús, junto a su familia y ${t.community} al cual pertenece.`);
   paragraph(`Además de indicarle que por misericordia de Dios le ${letterTemplate(letter)==='young'?'corresponden':'corresponde'} ${t.assignment}:`,6);
   const columns=[{x:25,w:40,label:'Función',value:role},{x:70,w:62,label:'Lugar',value:letter.class_name},{x:139,w:46,label:'Fecha',value:dateLabel(letter.date,{day:'numeric',month:'long'})}];
   pdf.setFont('EBGaramond','bold');if(draw)for(const c of columns)pdf.text(c.label,c.x,y);
@@ -55,7 +55,6 @@ export async function letterPDF(letter){
  pdf.addImage(signature.data,'PNG',105-sw/2,200,sw,sh);
  pdf.setFontSize(11);pdf.setFont('EBGaramond','bold');pdf.text(t.signer,105,251,{align:'center'});
  pdf.setFont('EBGaramond','normal');pdf.text(t.titles,105,256,{align:'center',lineHeightFactor:1.15});
- if(t.initials){pdf.setFontSize(8);pdf.text(t.initials,25,267);}
  pdf.setFontSize(9.5);const verse=pdf.splitTextToSize(t.verse,160);pdf.text(verse,105,278,{align:'center',lineHeightFactor:1.15});
  pdf.setFont('EBGaramond','bold');pdf.text(t.citation,105,278+verse.length*3.85+1,{align:'center'});
  return pdf.output('arraybuffer');
