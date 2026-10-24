@@ -4,35 +4,60 @@ const safeName=s=>normalize(s).replace(/[^A-Z0-9 _-]/g,'').replace(/\s+/g,'-');
 export const letterFilename=l=>`${l.date}_${safeName(l.group)}_${safeName(l.class_name)}_${safeName(l.role)}_${safeName(l.name)}_${safeName(l.folio)}.pdf`;
 const cached=new Map();
 async function imageData(path){if(!cached.has(path))cached.set(path,(async()=>{const image=new Image();image.src=path;await image.decode();const c=document.createElement('canvas');c.width=image.naturalWidth;c.height=image.naturalHeight;c.getContext('2d').drawImage(image,0,0);return {data:c.toDataURL('image/png'),width:c.width,height:c.height,image};})());return cached.get(path);}
-export const letterTemplate=l=>l.group==='Señoritas'?'women':l.role==='Dirección del coro'?'choir':'young';
-const templates={
- young:{prefix:'Hno.',greeting:'Estimado',group:'Jóvenes',contact:['Hno Marco Lara: +5698232544','Hno Jonathan Núñez: +56982450670'],signer:'Hno. Marco Lara Larenas',title:'Jefe General JUPA',signature:'/cartas/firma-jovenes.png',verse:'“Ninguno tenga en poco tu juventud, sino sé ejemplo de los creyentes en palabra, conducta, amor, espíritu, fe y pureza.”',citation:'1 Timoteo 4:12'},
- choir:{prefix:'Hno.',greeting:'Estimado',group:'Jóvenes',contact:['Hno Gerard Rosales: +56953852982','Hno Luis Cerda: +56945617856'],signer:'Hno. Gerard Rosales',title:'Jefe Coro JUPA',verse:'“Bendeciré a Jehová en todo tiempo; Su alabanza estará de continuo en mi boca.”',citation:'Salmos 34:1'},
- women:{prefix:'Hna.',greeting:'Estimada',group:'Señoritas',contact:['Hna Mariela Vargas: +56973201959','Hna Evelyn Lobos: +56987562597','Hna Paulina Tapia: +56990326448'],signer:'Hna. Mariela Vargas',title:'Jefa General Señoritas',signature:'/cartas/firma-senoritas.png',verse:'“Mira que te mando que te esfuerces y seas valiente; no temas ni desmayes, porque Jehová tu Dios estará contigo en dondequiera que vayas.”',citation:'Josué 1:9'}
-};
+export {letterTemplate} from './letter-model.mjs';
+import {letterTemplate,letterTemplates} from './letter-model.mjs';
+const fonts=new Map();
+async function fontData(style){
+ if(!fonts.has(style))fonts.set(style,(async()=>{
+  const response=await fetch(`/cartas/fuentes/EBGaramond-${style}.ttf`);
+  if(!response.ok)throw Error('No se pudo cargar la tipografía de las cartas. Recarga e intenta nuevamente.');
+  const bytes=new Uint8Array(await response.arrayBuffer());let binary='';
+  for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return btoa(binary);
+ })().catch(error=>{fonts.delete(style);throw error;}));
+ return fonts.get(style);
+}
 export async function letterPDF(letter){
- const {jsPDF}=await import('jspdf'),pdf=new jsPDF({format:'a4',compress:true}),t=templates[letterTemplate(letter)],logo=await imageData('/logo-completo.webp');
- pdf.setFont('times','normal');pdf.setTextColor(20);pdf.setFontSize(11);
- pdf.addImage(logo.data,'PNG',24,26,39,39*logo.height/logo.width);
- pdf.text(['Iglesia Metodista Pentecostal de Chile','Pastorado de Puente Alto','Juventud Unida de Puente Alto'],69,29,{lineHeightFactor:1.3});
- pdf.text('Folio '+letter.folio,185,56,{align:'right'});pdf.text(dateLabel(letter.issued,{day:'numeric',month:'long',year:'numeric'}),185,62,{align:'right'});
- let y=75;
- const paragraph=(text,space=6)=>{const lines=pdf.splitTextToSize(text,162);pdf.text(lines,24,y,{lineHeightFactor:1.35});y+=lines.length*5.25+space;};
- paragraph(`${t.prefix} ${letter.name}   Presente`,1);paragraph(`${t.greeting} en el Señor`,5);
- paragraph(`Por la presente le saluda confiando goce de las más ricas bendiciones en Cristo Jesús, junto a su familia y grupo de ${t.group} al cual pertenece.`,2);
- paragraph(letterTemplate(letter)==='women'?'Además de indicarle que por misericordia de Dios le corresponde el siguiente trabajo como clase:':'Además de indicarle que por misericordia de Dios le corresponde el siguiente servicio:',4);
+ const {jsPDF}=await import('jspdf'),pdf=new jsPDF({format:'a4',compress:true});
+ const t=letterTemplates[letterTemplate(letter)];
+ const [regular,bold,logo,signature]=await Promise.all([fontData('Regular'),fontData('Bold'),imageData('/cartas/logo-jupa-cartas.png'),imageData(t.signature)]);
+ pdf.addFileToVFS('EBGaramond-Regular.ttf',regular);pdf.addFont('EBGaramond-Regular.ttf','EBGaramond','normal');
+ pdf.addFileToVFS('EBGaramond-Bold.ttf',bold);pdf.addFont('EBGaramond-Bold.ttf','EBGaramond','bold');
+ pdf.setProperties({title:`${letter.folio} · ${letter.role} · ${letter.name}`,author:'Juventud Unida de Puente Alto',subject:'Asignación de responsabilidad en visita JUPA'});
+ pdf.setTextColor(20);pdf.setFont('EBGaramond','normal');pdf.setFontSize(11);
+ pdf.addImage(logo.data,'PNG',25,25,42,42*logo.height/logo.width);
+ pdf.setFont('EBGaramond','bold');pdf.text('Iglesia Metodista Pentecostal de Chile',185,29,{align:'right'});
+ pdf.setFont('EBGaramond','normal');pdf.text(['Pastorado de Puente Alto','Juventud Unida de Puente Alto'],185,34,{align:'right',lineHeightFactor:1.25});
+ pdf.text('Folio N° '+letter.folio,185,56,{align:'right'});
+ pdf.text(dateLabel(letter.issued,{day:'numeric',month:'long',year:'numeric'}),185,62,{align:'right'});
  const role=letter.role==='Coordinación'?(letter.group==='Señoritas'?'Coordinadora':'Coordinador'):letter.role==='Predicación'?(letter.group==='Señoritas'?'Predicadora':'Predicador'):(letter.group==='Señoritas'?'Dirección del coro':'Jefe Coro');
- const columns=[{x:26,w:45,label:'Función',value:role},{x:74,w:63,label:'Lugar',value:letter.class_name},{x:140,w:46,label:'Fecha',value:dateLabel(letter.date,{day:'numeric',month:'long'})}];
- let height=0;pdf.setFont('times','bold');for(const c of columns)pdf.text(c.label,c.x,y);pdf.setFont('times','normal');y+=6;
- for(const c of columns){const lines=pdf.splitTextToSize(c.value,c.w);height=Math.max(height,lines.length*5.25);pdf.text(lines,c.x,y,{lineHeightFactor:1.35});}y+=height+11;
- paragraph('Ante cualquier duda o consulta favor contactarse con uno de nuestros hermanos detallados a continuación:',4);
- for(const contact of t.contact)paragraph(contact,0);
- y+=6;paragraph('Rogando a nuestro Salvador le revista de su gracia se despide muy atentamente.',0);
- // La firma se mantiene separada del texto para que ambos resulten legibles.
- const signatureY=Math.max(211,y+8);
- if(t.signature){const signature=await imageData(t.signature);const height=Math.min(22,58*signature.height/signature.width);const width=height*signature.width/signature.height;pdf.addImage(signature.data,'PNG',105-width/2,signatureY,width,height);}
- const nameY=Math.max(240,signatureY+27);pdf.text([t.signer,t.title,'Catedral Evangélica de Puente Alto'],105,nameY,{align:'center',lineHeightFactor:1.2});
- pdf.setFontSize(10);const verse=pdf.splitTextToSize(t.verse,166);pdf.text(verse,105,274,{align:'center',lineHeightFactor:1.15});pdf.text(t.citation,105,274+verse.length*4.1+2,{align:'center'});
+ // Medir primero evita que nombres largos alcancen la firma o salgan de la hoja.
+ function body(size,draw){
+  let y=76;const line=size*0.455;
+  pdf.setFontSize(size);pdf.setFont('EBGaramond','normal');
+  const paragraph=(text,space=4,weight='normal')=>{pdf.setFont('EBGaramond',weight);const lines=pdf.splitTextToSize(text,160);if(draw)pdf.text(lines,25,y,{lineHeightFactor:1.29});y+=lines.length*line+space;};
+  paragraph(`${t.prefix} ${letter.name}`,2,'bold');paragraph(`${t.greeting} en el Señor:`,5);
+  paragraph(`Por la presente le saluda confiando goce de las más ricas bendiciones en Cristo Jesús, junto a su familia y ${t.community} al cual pertenece.`);
+  paragraph(`Además de indicarle que por misericordia de Dios le ${letterTemplate(letter)==='young'?'corresponden':'corresponde'} ${t.assignment}:`,6);
+  const columns=[{x:25,w:40,label:'Función',value:role},{x:70,w:62,label:'Lugar',value:letter.class_name},{x:139,w:46,label:'Fecha',value:dateLabel(letter.date,{day:'numeric',month:'long'})}];
+  pdf.setFont('EBGaramond','bold');if(draw)for(const c of columns)pdf.text(c.label,c.x,y);
+  y+=line+1;pdf.setFont('EBGaramond','normal');let height=0;
+  for(const c of columns){const lines=pdf.splitTextToSize(c.value,c.w);height=Math.max(height,lines.length*line);if(draw)pdf.text(lines,c.x,y,{lineHeightFactor:1.29});}y+=height+8;
+  paragraph(t.contactIntro,3);for(const contact of t.contacts)paragraph(contact,0);
+  y+=5;paragraph('Rogando a nuestro Salvador le revista de su gracia se despide muy atentamente,',0);
+  return y;
+ }
+ let size=11;while(body(size,false)>207&&size>9.5)size-=0.25;
+ if(body(size,false)>207)throw Error('El nombre o lugar es demasiado extenso para la carta. Revisa los datos antes de exportar.');
+ body(size,true);
+ // Mantener las firmas originales, con su proporción y sin reconstruir sus trazos.
+ const sh=48,sw=sh*signature.width/signature.height;
+ pdf.addImage(signature.data,'PNG',105-sw/2,200,sw,sh);
+ pdf.setFontSize(11);pdf.setFont('EBGaramond','bold');pdf.text(t.signer,105,251,{align:'center'});
+ pdf.setFont('EBGaramond','normal');pdf.text(t.titles,105,256,{align:'center',lineHeightFactor:1.15});
+ if(t.initials){pdf.setFontSize(8);pdf.text(t.initials,25,267);}
+ pdf.setFontSize(9.5);const verse=pdf.splitTextToSize(t.verse,160);pdf.text(verse,105,278,{align:'center',lineHeightFactor:1.15});
+ pdf.setFont('EBGaramond','bold');pdf.text(t.citation,105,278+verse.length*3.85+1,{align:'center'});
  return pdf.output('arraybuffer');
 }
 export function summaryRows(visits){

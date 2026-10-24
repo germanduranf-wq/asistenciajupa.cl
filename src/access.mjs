@@ -1,11 +1,11 @@
-export const MODULES = { ensayo_coro:'Ensayos Coro JUPA', evento_coro:'Coro en evento JUPA', devocional: 'Devocionales JUPA', visita: 'Visitas', reunion_encargados: 'Reuniones de encargados JUPA', escuela_dominical: 'Escuela dominical', servicio_domingo: 'Servicio del domingo', reunion_mensual: 'Reunión mensual' };
+export const MODULES = { servicio_jupa:'Servicio JUPA de la tarde', ensayo_coro:'Ensayos Coro JUPA', evento_coro:'Coro en evento JUPA', devocional: 'Devocionales JUPA', visita: 'Visitas', reunion_encargados: 'Reuniones de encargados JUPA', escuela_dominical: 'Escuela dominical', servicio_domingo: 'Servicio del domingo', reunion_mensual: 'Reunión mensual' };
 export const PROFILE_ROLES = { coro:'Coro JUPA', admin: 'Administrador', jefatura: 'Jefatura del Templo Matriz', secretaria: 'Secretaría JUPA', clase: 'Cuenta de clase', encargado: 'Encargado de visitas' };
 export const localActivity = type => ['escuela_dominical','servicio_domingo','reunion_mensual'].includes(type);
 export function canActivity(profile, data, module, classId, action = 'view') {
   if (!profile?.active || profile.must_change_password || !data.activity_modules?.some(m => m.code === module && m.enabled)) return false;
   if (profile.role === 'admin') return true;
   if (profile.role === 'clase' && (!localActivity(module) || (classId && classId !== profile.class_id))) return false;
-  if (profile.role === 'secretaria' && !['reunion_encargados','devocional','ensayo_coro','evento_coro'].includes(module)) return false;
+  if (profile.role === 'secretaria' && !['reunion_encargados','devocional','ensayo_coro','evento_coro','servicio_jupa'].includes(module)) return false;
   if (profile.role === 'coro' && !['ensayo_coro','evento_coro'].includes(module)) return false;
   if (profile.role === 'encargado' && module !== 'visita') return false;
   return (data.account_permissions || []).some(p => p.profile_id === profile.id && p.module === module && p.can_view && (!classId || !p.class_id || p.class_id === classId) && (profile.role !== 'clase' || !p.class_id || p.class_id === profile.class_id) && (action === 'view' || p[`can_${action}`]));

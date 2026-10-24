@@ -53,3 +53,23 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{min-width:0}input,
 .bulletin-sheet .bulletin-hero img{grid-row:1/5;width:240px;max-width:100%;margin:0}
 .bulletin-sheet .bulletin-hero h1{font-size:38px}.bulletin-sheet .bulletin-hero p{font-size:23px;margin:6px 0}.bulletin-sheet .bulletin-highlight{margin:0}
 @media(max-width:700px){.public-bulletin .bulletin-sheet{grid-template-columns:1fr;gap:20px}.bulletin-sheet .bulletin-hero{grid-template-columns:1fr;text-align:center;gap:8px;padding:22px 16px}.bulletin-sheet .bulletin-hero img{grid-row:auto;width:220px;margin:0 auto 12px}.bulletin-sheet .bulletin-hero h1{font-size:32px}}
+/* Resúmenes de Secretaría: prioridad a teléfonos y formularios ampliados. */
+.service-presence,.summary-card{padding:24px;margin:20px 0}
+.summary-numbers{display:flex;flex-wrap:wrap;gap:16px;margin:20px 0}
+.summary-numbers>div{flex:1 1 110px;padding:16px;background:#eff5fc;border-radius:14px;display:flex;flex-direction:column;gap:6px}
+.summary-numbers b{font-size:28px;color:#292e77}
+.summary-numbers span{font-size:13px;line-height:1.5;color:#4c5671}
+.summary-actions{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.summary-actions .button{white-space:normal;text-align:left}
+.summary-fields{border:0;padding:0;margin:0;min-width:0}
+.summary-fields .form-grid>*,.summary-fields input,.summary-fields select{min-width:0;max-width:100%}
+.summary-choices{border:1px solid #dce1ed;border-radius:14px;margin:18px 0;padding:16px;min-width:0}
+.summary-choices legend{font-weight:600;padding:0 6px}
+.summary-choices>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:8px;margin-top:14px;max-height:230px;overflow:auto}
+.summary-choices .check-label{align-items:flex-start;line-height:1.5}
+.summary-choices .check-label input{flex:none;margin-top:3px}
+.summary-choices>input{width:100%;box-sizing:border-box}
+.participant-export{margin-bottom:18px}
+@media(max-width:600px){.service-presence,.summary-card{padding:16px}.summary-numbers{gap:8px}.summary-numbers>div{padding:12px}.summary-fields .form-grid{grid-template-columns:minmax(0,1fr)}.summary-actions>div,.summary-actions>.button{width:100%}.summary-actions .button{max-width:100%}}
+
+.summary-form .modal-foot{position:sticky;bottom:0;padding-bottom:max(16px,env(safe-area-inset-bottom))}

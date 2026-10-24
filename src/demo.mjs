@@ -80,9 +80,9 @@ export function createDemo() {
     version: 1
   })));
   const data = {
-    activity_modules: Object.entries({visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
+    activity_modules: Object.entries({servicio_jupa:'Servicio JUPA de la tarde',visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
     bodies: ['Comunicaciones JUPA','Audio JUPA','Enfermería JUPA','Secretaría JUPA','Coro JUPA'].map((name,i)=>({id:'body'+i,name,active:true})), bulletin_events: [], bulletin_highlights: [],
-    account_permissions: ['visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual','devocional'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
+    account_permissions: ['servicio_jupa','visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual','devocional'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
     classes,
     people,
     visits,
@@ -125,5 +125,7 @@ export function createDemo() {
   data.visits.push({id:'demo-evento',date:t,class_id:'c0',group:'Todos',activity_type:'evento_coro',status:'pending',version:1,notes:'Participación del coro en el encuentro mensual JUPA',evento_id:'demo-publico'});
   data.bulletin_events.push({id:'demo-publico',kind:'jupa',date:t,title:'Encuentro mensual JUPA',host_ids:['c0','c1'],venue:'Templo Matriz',address:'Dirección ficticia de ejemplo',maps_url:'',preaching_place:'Plaza de ejemplo',morning_time:'10:00',evening_time:'18:00',published:true,version:1});
   data.bulletin_highlights.push({id:'aviso-demo',month:t.slice(0,7)+'-01',message:'Datos de demostración: acompáñanos en las actividades del mes.',published:true,version:1});
+  data.visits.push({id:'demo-tarde',date:t,class_id:'c0',group:'Todos',activity_type:'servicio_jupa',status:'pending',version:1,notes:'Servicio general JUPA',evento_id:'demo-publico'});
+  data.service_summaries=[];
   return data;
 }

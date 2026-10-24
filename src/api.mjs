@@ -1,4 +1,5 @@
 import {database} from './database.mjs';
+import {summaryPayload,canSummary} from './service-summary.mjs';
 import { canPerson, canActivity, eligiblePerson, localActivity, MODULES, canSchedule } from './access.mjs';
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
@@ -9,7 +10,7 @@ export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
 export const supabase = configured ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
 const db = configured ? database(supabase) : null;
-const KEY = 'jupa-demo-v4';
+const KEY = 'jupa-demo-v5';
 let demo = false;
 let demoRole = 'admin';
 export const isDemo = () => demo;
@@ -37,6 +38,21 @@ function writeDemo(d) {
 function result(r) {
   if (r.error) throw new Error(r.error.message);
   return r.data;
+}
+// Resúmenes conservan los nombres de columnas en español en toda su interfaz.
+export async function fetchServiceSummaries(){
+ if(demo)return readDemo().service_summaries||[];
+ const rows=[];
+ for(let start=0;;start+=1000){const page=result(await supabase.from('resumenes_servicios').select('*').order('id').range(start,start+999));rows.push(...page);if(page.length<1000)return rows;}
+}
+export async function saveServiceSummary(visit,values,version=0){
+ const payload=summaryPayload(values);
+ if(!demo)return result(await supabase.rpc('v3_guardar_resumen',{p_actividad:visit.id,p_datos:payload,p_version:version}));
+ const d=readDemo(),p=await fetchProfile();if(!canSummary(p,d,visit,'manage'))throw Error('Sin permiso para completar este resumen.');
+ d.service_summaries||=[];const old=d.service_summaries.find(r=>String(r.actividad_id)===visit.id);
+ if((old?.version||0)!==version)throw Error('Otra persona modificó el resumen. Vuelve a abrirlo.');
+ const row={...payload,actividad_id:visit.id,version:version+1,actualizado_el:new Date().toISOString()};
+ d.service_summaries=d.service_summaries.filter(r=>r!==old).concat(row);writeDemo(d);return row;
 }
 export async function fetchAll() {
   if (demo) {
@@ -396,7 +412,7 @@ export async function reactivatePerson(id) {
 
 export async function saveBulletin(table, values) {
   if (!['bulletin_events','bulletin_highlights','bodies'].includes(table)) throw Error('Tabla no válida.');
-  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];if(table==='bulletin_events'){const existing=d.visits.find(x=>x.evento_id===v.id);if(v.kind==='jupa'){const linked={...existing,id:existing?.id||crypto.randomUUID(),evento_id:v.id,date:v.date,class_id:v.host_ids[0],group:'Todos',activity_type:'evento_coro',status:existing?.status||'pending',notes:v.title,version:(existing?.version||0)+1,eliminado_el:v.published?null:new Date().toISOString()};d.visits=existing?d.visits.map(x=>x.id===existing.id?linked:x):[...d.visits,linked];}else if(existing)existing.eliminado_el=new Date().toISOString();}writeDemo(d);return v;}
+  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];if(table==='bulletin_events'){for(const linkedType of ['evento_coro','servicio_jupa']){const existing=d.visits.find(x=>x.evento_id===v.id&&x.activity_type===linkedType);if(v.kind==='jupa'){const linked={...existing,id:existing?.id||crypto.randomUUID(),evento_id:v.id,date:v.date,class_id:v.host_ids[0],group:'Todos',activity_type:linkedType,status:existing?.status||'pending',notes:v.title,version:(existing?.version||0)+1,eliminado_el:v.published?null:new Date().toISOString()};d.visits=existing?d.visits.map(x=>x.id===existing.id?linked:x):[...d.visits,linked];}else if(existing)existing.eliminado_el=new Date().toISOString();}}writeDemo(d);return v;}
   const {id,version,...fields}=values;
   if (table!=='bodies') fields.version=id?version+1:1;
   let q=id?db.from(table).update(fields).eq('id',id):db.from(table).insert(fields);
@@ -415,7 +431,7 @@ export async function saveAttendanceBatch(visit, changes) {
  if(!demo)return result(await db.rpc('guardar_asistencias',{p_visit:visit.id,p_changes:changes}));
  const d=readDemo(),p=await fetchProfile();if(!canEdit(visit,p.role)||!canActivity(p,d,visit.activity_type||'visita',visit.class_id,'manage'))throw Error('No tienes permiso para guardar.');
  for(const c of changes){if(c.present&&localActivity(visit.activity_type)&&d.attendance.some(a=>a.person_id===c.person_id&&a.present&&a.visit_id!==visit.id&&d.visits.some(v=>v.id===a.visit_id&&v.date===visit.date&&v.activity_type===visit.activity_type&&!v.eliminado_el&&v.status!=='suspended')))throw Error('Esta persona ya está presente en otra clase para el mismo servicio.');const old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);if((old?.version||0)!==c.version)throw Error('Otro encargado modificó una marca. Revisa los cambios pendientes.');}
- const saved=changes.map(c=>{const person=d.people.find(p=>p.id===c.person_id),old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);return {...old,visit_id:visit.id,person_id:person.id,present:c.present,class_id:old?.class_id||(localActivity(visit.activity_type)?visit.class_id:person.class_id),category:old?.category||person.category,version:c.version+1,updated_at:new Date().toISOString()};});
+ const saved=changes.map(c=>{const person=d.people.find(p=>p.id===c.person_id),old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);return {...old,visit_id:visit.id,person_id:person.id,present:c.present,class_id:old?.class_id||(localActivity(visit.activity_type)?visit.class_id:person.class_id),category:old?.category||person.category,body_ids:old?old.body_ids:person.body_ids||[],version:c.version+1,updated_at:new Date().toISOString()};});
  d.attendance=d.attendance.filter(a=>!saved.some(b=>b.visit_id===a.visit_id&&b.person_id===a.person_id)).concat(saved);if(changes.some(c=>c.present))d.visits=d.visits.map(v=>v.id===visit.id?{...v,status:'held'}:v);writeDemo(d);return saved;
 }
 export async function attendanceFor(id){if(demo)return readDemo().attendance.filter(a=>a.visit_id===id);return result(await db.from('attendance').select('*').eq('visit_id',id));}
