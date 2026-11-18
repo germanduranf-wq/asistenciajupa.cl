@@ -215,6 +215,7 @@ function App() {
  {page === 'home' && visibleModules.includes('visita') && <Dashboard data={{...data,visits:data.visits.filter(v=>(v.activity_type||'visita')==='visita')}} profile={profile} className={className} openVisit={openVisit} go={go} newVisit={() => setModal({
           type: 'visit'
         })} />}
+ {page==='home'&&<HomeOverview section="agenda" data={data} profile={profile} openVisit={openVisit} go={go}/>}
  {page === 'visits' && visibleModules.includes('visita') && <Visits data={{...data,visits:data.visits.filter(v=>(v.activity_type||'visita')==='visita')}} profile={profile} className={className} openVisit={openVisit} edit={visit => setModal({
           type: 'visit',
           visit
