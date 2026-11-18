@@ -29,7 +29,7 @@ export const SUMMARY_TEXT={
 };
 export function summaryDefaults(data,v,saved){
  const event=data.bulletin_events?.find(e=>e.id===v.evento_id);
- return {devocional_id:null,primer_ensayo_id:null,segundo_ensayo_id:null,anfitrionas_ids:event?.host_ids||[],total_punto:null,total_general:null,invitaciones_ids:[],oportunidades_ids:[],solicitaron_tema_ids:[],...Object.fromEntries(Object.values(SUMMARY_TEXT).flat().map(([k])=>[k,''])),...saved};
+ return {devocional_id:null,primer_ensayo_id:null,segundo_ensayo_id:null,anfitrionas_ids:event?.host_ids||[],total_punto:null,total_general:null,invitaciones_ids:[],oportunidades_ids:[],solicitaron_tema_ids:[],...Object.fromEntries(Object.values(SUMMARY_TEXT).flat().map(([k])=>[k,''])),...saved,devocional_id:(v.evento_id?data.visits.find(d=>d.evento_id===v.evento_id&&d.activity_type==='devocional')?.id:null)||saved?.devocional_id||null};
 }
 export function summaryPayload(values){
  const fields=['devocional_id','primer_ensayo_id','segundo_ensayo_id','anfitrionas_ids','total_punto','total_general','invitaciones_ids','oportunidades_ids','solicitaron_tema_ids',...Object.values(SUMMARY_TEXT).flat().map(([k])=>k)];

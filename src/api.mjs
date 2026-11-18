@@ -10,7 +10,7 @@ export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
 export const supabase = configured ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
 const db = configured ? database(supabase) : null;
-const KEY = 'jupa-demo-v5';
+const KEY = 'jupa-demo-v6';
 let demo = false;
 let demoRole = 'admin';
 export const isDemo = () => demo;
@@ -412,7 +412,7 @@ export async function reactivatePerson(id) {
 
 export async function saveBulletin(table, values) {
   if (!['bulletin_events','bulletin_highlights','bodies'].includes(table)) throw Error('Tabla no válida.');
-  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];if(table==='bulletin_events'){for(const linkedType of ['evento_coro','servicio_jupa']){const existing=d.visits.find(x=>x.evento_id===v.id&&x.activity_type===linkedType);if(v.kind==='jupa'){const linked={...existing,id:existing?.id||crypto.randomUUID(),evento_id:v.id,date:v.date,class_id:v.host_ids[0],group:'Todos',activity_type:linkedType,status:existing?.status||'pending',notes:v.title,version:(existing?.version||0)+1,eliminado_el:v.published?null:new Date().toISOString()};d.visits=existing?d.visits.map(x=>x.id===existing.id?linked:x):[...d.visits,linked];}else if(existing)existing.eliminado_el=new Date().toISOString();}}writeDemo(d);return v;}
+  if (demo) {const d=readDemo();const v={...values,id:values.id||crypto.randomUUID(),version:(values.version||0)+1};d[table] ||= [];d[table]=d[table].some(x=>x.id===v.id)?d[table].map(x=>x.id===v.id?v:x):[...d[table],v];if(table==='bulletin_events'){for(const linkedType of ['evento_coro','servicio_jupa','devocional']){const existing=d.visits.find(x=>x.evento_id===v.id&&x.activity_type===linkedType);if(v.kind==='jupa'){const linked={...existing,id:existing?.id||crypto.randomUUID(),evento_id:v.id,date:v.date,class_id:v.host_ids[0],group:'Todos',activity_type:linkedType,status:existing?.status||'pending',notes:v.title,version:(existing?.version||0)+1,eliminado_el:v.published?null:new Date().toISOString()};d.visits=existing?d.visits.map(x=>x.id===existing.id?linked:x):[...d.visits,linked];}else if(existing)existing.eliminado_el=new Date().toISOString();}}writeDemo(d);return v;}
   const {id,version,...fields}=values;
   if (table!=='bodies') fields.version=id?version+1:1;
   let q=id?db.from(table).update(fields).eq('id',id):db.from(table).insert(fields);
@@ -423,8 +423,8 @@ export async function publicBulletin(month) {
   if (configured&&!demo) return result(await db.rpc('public_bulletin',{p_month:month+'-01'}));
   if (!demoAllowed&&!demo) throw Error('No está configurada la conexión para los avisos.');
   const d=readDemo();return {month:month+'-01',highlight:d.bulletin_highlights?.find(x=>x.month===month+'-01'&&x.published)?.message||'',
-   activities:d.visits.filter(v=>!v.eliminado_el&&v.date.startsWith(month)&&['visita','reunion_encargados','devocional'].includes(v.activity_type||'visita')).map(v=>{const c=d.classes.find(c=>c.id===(v.venue_class_id||v.class_id));return {id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,time:v.scheduled_time,class_name:c?.name,address:c?.address||'',commune:c?.commune||'Puente Alto',maps_url:c?.maps_url||'',status:v.status};}),
-   events:(d.bulletin_events||[]).filter(v=>v.published&&v.date.startsWith(month)).map(v=>({...v,hosts:(v.host_ids||[]).map(id=>d.classes.find(c=>c.id===id)?.name)}))};
+   activities:d.visits.filter(v=>!v.eliminado_el&&!v.evento_id&&v.date.startsWith(month)&&['visita','reunion_encargados','devocional'].includes(v.activity_type||'visita')).map(v=>{const c=d.classes.find(c=>c.id===(v.venue_class_id||v.class_id));return {id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,time:v.scheduled_time,class_name:c?.name,address:c?.address||'',commune:c?.commune||'Puente Alto',maps_url:c?.maps_url||'',status:v.status};}),
+   events:(d.bulletin_events||[]).filter(v=>v.published&&v.date.startsWith(month)).map(v=>({...v,morning_status:d.visits.find(a=>a.evento_id===v.id&&a.activity_type==='devocional')?.status,evening_status:d.visits.find(a=>a.evento_id===v.id&&a.activity_type==='servicio_jupa')?.status,hosts:(v.host_ids||[]).map(id=>d.classes.find(c=>c.id===id)?.name)}))};
 }
 
 export async function saveAttendanceBatch(visit, changes) {
@@ -464,4 +464,19 @@ export async function issueLetters(visitId,month){
   if(!letter){letter={visit_id:v.id,person_id:r.person_id,role:r.role,folio:'DEMO AJ '+String(d.letters.length+1).padStart(2,'0'),issued:new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago'}).format(new Date())};d.letters.push(letter);}
   const p=d.people.find(p=>p.id===r.person_id);issuedLetters.push({...letter,name:`${p?.first_name||''} ${p?.last_name||''}`,class_name:d.classes.find(c=>c.id===v.class_id)?.name,date:v.date,group:v.group});
  }writeDemo(d);return issuedLetters;
+}
+export async function deletedMembers(){
+ if(!demo)return result(await supabase.from('miembros_eliminados').select('*').order('eliminado_el',{ascending:false}).limit(200));
+ const p=await fetchProfile();if(!['admin','jefatura','secretaria'].includes(p.role))throw Error('Sin acceso.');return readDemo().deleted_members||[];
+}
+export async function deleteMember(person,confirmation,reason){
+ if(demo){const d=readDemo(),p=await fetchProfile();if(!['admin','jefatura','secretaria'].includes(p.role)||!p.active||p.must_change_password)throw Error('Sin acceso.');
+ const current=d.people.find(x=>x.id===person.id);if(!current)throw Error('El participante ya no existe.');
+ if(confirmation!==`${current.first_name} ${current.last_name}`||reason.trim().length<5||reason.trim().length>500)throw Error('Confirma el nombre y el motivo.');
+ if(d.attendance.some(a=>a.person_id===person.id)||d.responsibilities.some(r=>r.person_id===person.id||r.actual_person_id===person.id)||(d.letters||[]).some(l=>l.person_id===person.id)||current.merged_into||d.people.some(x=>x.merged_into===person.id))throw Error('El participante tiene historial. Consérvalo inactivo o solicita la fusión de duplicados al administrador.');
+ d.deleted_members=[{id:crypto.randomUUID(),nombre:confirmation,iglesia:d.classes.find(c=>c.id===current.class_id)?.name,motivo:reason.trim(),nombre_usuario:p.name,eliminado_el:new Date().toISOString()},...(d.deleted_members||[])];d.people=d.people.filter(x=>x.id!==person.id);writeDemo(d);return {};
+ }
+ const answer=result(await supabase.rpc('v3_eliminar_miembro',{p_id:person.id,p_confirmacion:confirmation,p_motivo:reason}));
+ if(answer.photo_path){const removed=await supabase.storage.from('portraits').remove([answer.photo_path]);if(removed.error)return {warning:'Ficha eliminada y registrada en el historial. No se pudo limpiar la fotografía; avisa al administrador.'};}
+ return answer;
 }

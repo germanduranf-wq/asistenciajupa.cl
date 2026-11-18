@@ -18,7 +18,8 @@ async function fontData(style){
  return fonts.get(style);
 }
 export async function letterPDF(letter){
- const {jsPDF}=await import('jspdf'),pdf=new jsPDF({format:'a4',compress:true});
+ const {jsPDF}=await import('jspdf'),pdf=new jsPDF({format:'letter',compress:true});
+ const center=pdf.internal.pageSize.getWidth()/2, right=pdf.internal.pageSize.getWidth()-25;
  const t=letterTemplates[letterTemplate(letter)];
  const [regular,bold,logo,signature]=await Promise.all([fontData('Regular'),fontData('Bold'),imageData('/cartas/logo-jupa-cartas.png'),imageData(t.signature)]);
  pdf.addFileToVFS('EBGaramond-Regular.ttf',regular);pdf.addFont('EBGaramond-Regular.ttf','EBGaramond','normal');
@@ -26,14 +27,14 @@ export async function letterPDF(letter){
  pdf.setProperties({title:`${letter.folio} · ${letter.role} · ${letter.name}`,author:'Juventud Unida de Puente Alto',subject:'Asignación de responsabilidad en visita JUPA'});
  pdf.setTextColor(20);pdf.setFont('EBGaramond','normal');pdf.setFontSize(11);
  pdf.addImage(logo.data,'PNG',25,25,42,42*logo.height/logo.width);
- pdf.setFont('EBGaramond','bold');pdf.text('Iglesia Metodista Pentecostal de Chile',185,29,{align:'right'});
- pdf.setFont('EBGaramond','normal');pdf.text(['Pastorado de Puente Alto','Juventud Unida de Puente Alto'],185,34,{align:'right',lineHeightFactor:1.25});
- pdf.text('Folio N° '+letter.folio,185,56,{align:'right'});
- pdf.text(dateLabel(letter.issued,{day:'numeric',month:'long',year:'numeric'}),185,62,{align:'right'});
+ pdf.setFont('EBGaramond','bold');pdf.text('Iglesia Metodista Pentecostal de Chile',right,29,{align:'right'});
+ pdf.setFont('EBGaramond','normal');pdf.text(['Pastorado de Puente Alto','Juventud Unida de Puente Alto'],right,34,{align:'right',lineHeightFactor:1.25});
+ pdf.text('Folio N° '+letter.folio,right,56,{align:'right'});
+ pdf.text(dateLabel(letter.issued,{day:'numeric',month:'long',year:'numeric'}),right,62,{align:'right'});
  const role=letter.role==='Coordinación'?(letter.group==='Señoritas'?'Coordinadora':'Coordinador'):letter.role==='Predicación'?(letter.group==='Señoritas'?'Predicadora':'Predicador'):(letter.group==='Señoritas'?'Dirección del coro':'Jefe Coro');
  // Medir primero evita que nombres largos alcancen la firma o salgan de la hoja.
  function body(size,draw){
-  let y=76;const line=size*0.455;
+  let y=69;const line=size*0.455;
   pdf.setFontSize(size);pdf.setFont('EBGaramond','normal');
   const paragraph=(text,space=4,weight='normal')=>{pdf.setFont('EBGaramond',weight);const lines=pdf.splitTextToSize(text,160);if(draw)pdf.text(lines,25,y,{lineHeightFactor:1.29});y+=lines.length*line+space;};
   paragraph(`${t.prefix} ${titleName(letter.name)}`,2,'bold');paragraph(`${t.greeting} en el Señor:`,5);
@@ -47,16 +48,16 @@ export async function letterPDF(letter){
   y+=5;paragraph('Rogando a nuestro Salvador le revista de su gracia se despide muy atentamente,',0);
   return y;
  }
- let size=11;while(body(size,false)>207&&size>9.5)size-=0.25;
- if(body(size,false)>207)throw Error('El nombre o lugar es demasiado extenso para la carta. Revisa los datos antes de exportar.');
+ let size=11;while(body(size,false)>188&&size>9.5)size-=0.25;
+ if(body(size,false)>188)throw Error('El nombre o lugar es demasiado extenso para la carta. Revisa los datos antes de exportar.');
  body(size,true);
  // Mantener las firmas originales, con su proporción y sin reconstruir sus trazos.
- const sh=48,sw=sh*signature.width/signature.height;
- pdf.addImage(signature.data,'PNG',105-sw/2,200,sw,sh);
- pdf.setFontSize(11);pdf.setFont('EBGaramond','bold');pdf.text(t.signer,105,251,{align:'center'});
- pdf.setFont('EBGaramond','normal');pdf.text(t.titles,105,256,{align:'center',lineHeightFactor:1.15});
- pdf.setFontSize(9.5);const verse=pdf.splitTextToSize(t.verse,160);pdf.text(verse,105,278,{align:'center',lineHeightFactor:1.15});
- pdf.setFont('EBGaramond','bold');pdf.text(t.citation,105,278+verse.length*3.85+1,{align:'center'});
+ const sh=40,sw=sh*signature.width/signature.height;
+ pdf.addImage(signature.data,'PNG',center-sw/2,190,sw,sh);
+ pdf.setFontSize(11);pdf.setFont('EBGaramond','bold');pdf.text(t.signer,center,234,{align:'center'});
+ pdf.setFont('EBGaramond','normal');pdf.text(t.titles,center,239,{align:'center',lineHeightFactor:1.15});
+ pdf.setFontSize(9.5);const verse=pdf.splitTextToSize(t.verse,160);pdf.text(verse,center,263,{align:'center',lineHeightFactor:1.15});
+ pdf.setFont('EBGaramond','bold');pdf.text(t.citation,center,263+verse.length*3.85+1,{align:'center'});
  return pdf.output('arraybuffer');
 }
 export function summaryRows(visits){

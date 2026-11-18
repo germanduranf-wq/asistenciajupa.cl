@@ -126,6 +126,7 @@ export function createDemo() {
   data.bulletin_events.push({id:'demo-publico',kind:'jupa',date:t,title:'Encuentro mensual JUPA',host_ids:['c0','c1'],venue:'Templo Matriz',address:'Dirección ficticia de ejemplo',maps_url:'',preaching_place:'Plaza de ejemplo',morning_time:'10:00',evening_time:'18:00',published:true,version:1});
   data.bulletin_highlights.push({id:'aviso-demo',month:t.slice(0,7)+'-01',message:'Datos de demostración: acompáñanos en las actividades del mes.',published:true,version:1});
   data.visits.push({id:'demo-tarde',date:t,class_id:'c0',group:'Todos',activity_type:'servicio_jupa',status:'pending',version:1,notes:'Servicio general JUPA',evento_id:'demo-publico'});
+  const demoDev=data.visits.find(v=>v.activity_type==='devocional'&&v.date===t);if(demoDev)demoDev.evento_id='demo-publico';else data.visits.push({id:'demo-devocional-evento',date:t,class_id:'c0',group:'Todos',activity_type:'devocional',status:'pending',version:1,notes:'Devocional del evento JUPA',evento_id:'demo-publico'});
   data.service_summaries=[];
   return data;
 }

@@ -22,16 +22,16 @@ function sheet(book,name,title,headers,rows,{logo,notes=''}={}){
  for(const values of rows){const row=ws.addRow(values);row.height=Math.max(34,Math.min(180,18*Math.max(...values.map(v=>Math.ceil(String(v??'').length/30)+String(v??'').split('\n').length-1))));row.eachCell({includeEmpty:true},(c,col)=>{c.font={name:'Calibri',size:11};c.alignment={vertical:'top',wrapText:true};c.border={bottom:{style:'hair',color:{argb:'FFD9E1EC'}}};if(row.number%2)c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF2F6FC'}};if(c.value instanceof Date)c.numFmt='dd/mm/yyyy';if(typeof c.value==='number')c.numFmt='#,##0';});}
  ws.autoFilter={from:{row:8,column:1},to:{row:8,column:end}};ws.headerFooter.oddFooter=`&LJUPA · Uso interno&RPágina &P de &N`;return ws;
 }
-export async function buildServiceWorkbook(data,summaries,profile,year,{logo}={}){
- const book=await workbookBase(profile);
+export async function buildServiceWorkbook(data,summaries,profile,year,{logo,from,to}={}){
+ const period=from&&to?`${from} a ${to}`:year;const book=await workbookBase(profile);const within=v=>from&&to?v.date>=from&&v.date<=to:v.date.startsWith(year);
  for(const [type,name]of Object.entries(SUMMARY_TYPES)){
-  const visits=data.visits.filter(v=>v.date.startsWith(year)&&v.status!=='suspended'&&canSummary(profile,data,v,'export')).filter(v=>v.activity_type===type).sort((a,b)=>a.date.localeCompare(b.date));
+  const visits=data.visits.filter(v=>within(v)&&v.status!=='suspended'&&canSummary(profile,data,v,'export')).filter(v=>v.activity_type===type).sort((a,b)=>a.date.localeCompare(b.date));
   const rows=visits.map(v=>{const row=summaryRow(v,summaries.find(r=>String(r.actividad_id)===v.id),data);row[0]=dateValue(row[0]);return row;});
-  sheet(book,type==='servicio_jupa'?'Servicio general':type==='devocional'?'Devocionales':'Reuniones y ensayos',`${name} ${year}`,SUMMARY_HEADERS[type],rows,{logo,notes:'Los totales manuales no se suman al registro por nombre. Vacío = no informado. Cero = total confirmado sin asistentes. Ensayos: asistencia total del coro; la reunión de encargados se cuenta aparte.'});
+  sheet(book,type==='servicio_jupa'?'Servicio general':type==='devocional'?'Devocionales':'Reuniones y ensayos',`${name} · ${period}`,SUMMARY_HEADERS[type],rows,{logo,notes:'Los totales manuales no se suman al registro por nombre. Vacío = no informado. Cero = total confirmado sin asistentes. Ensayos: asistencia total del coro; la reunión de encargados se cuenta aparte.'});
  }
- const devotional=data.visits.filter(v=>v.date.startsWith(year)&&v.activity_type==='devocional'&&v.status!=='suspended'&&canSummary(profile,data,v,'export'));
+ const devotional=data.visits.filter(v=>within(v)&&v.activity_type==='devocional'&&v.status!=='suspended'&&canSummary(profile,data,v,'export'));
  const requests=devotional.flatMap(v=>{const s=summaries.find(r=>String(r.actividad_id)===v.id);return data.classes.filter(c=>c.active||s?.solicitaron_tema_ids?.map(String).includes(c.id)).map(c=>[dateValue(v.date),c.name,s?s.solicitaron_tema_ids.map(String).includes(c.id)?'Sí':'No registrada':'Resumen pendiente',s?.tema_biblico||'']);});
- sheet(book,'Solicitudes tema bíblico','Solicitudes del tema bíblico '+year,['Fecha del devocional','Clase','Solicitud registrada','Tema bíblico'],requests,{logo,notes:'“No registrada” significa que Secretaría no ha registrado una solicitud de esa clase. Un resumen pendiente no se interpreta como falta de solicitud.'});
+ sheet(book,'Solicitudes tema bíblico','Solicitudes del tema bíblico · '+period,['Fecha del devocional','Clase','Solicitud registrada','Tema bíblico'],requests,{logo,notes:'“No registrada” significa que Secretaría no ha registrado una solicitud de esa clase. Un resumen pendiente no se interpreta como falta de solicitud.'});
  return book;
 }
 export async function buildAttendanceWorkbook(data,visit,profile,{logo}={}){
@@ -49,6 +49,6 @@ export async function buildParticipantsWorkbook(data,profile,{logo}={}){
  sheet(book,'Participantes','Registro completo de participantes JUPA',participantColumns(data),people.map(p=>{const r=participantRow(p,data);r[8]=dateValue(r[8]);r[12]=dateValue(r[12]);return r;}),{logo,notes:`${people.length} fichas, incluidos inactivos y registros fusionados. La referencia de foto es su ruta privada, no un enlace público.`});return book;
 }
 async function download(book,filename){const buffer=await book.xlsx.writeBuffer(),url=URL.createObjectURL(new Blob([buffer],{type:MIME})),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
-export async function exportServiceWorkbook(data,summaries,profile,year){await download(await buildServiceWorkbook(data,summaries,profile,year,{logo:await readLogo()}),`Resumenes-JUPA-${year}.xlsx`);}
+export async function exportServiceWorkbook(data,summaries,profile,year,range={}){await download(await buildServiceWorkbook(data,summaries,profile,year,{logo:await readLogo(),...range}),`Resumenes-JUPA-${range.from||year}${range.to?"_"+range.to:""}.xlsx`);}
 export async function exportAttendanceList(data,visit,profile){await download(await buildAttendanceWorkbook(data,visit,profile,{logo:await readLogo()}),`Asistentes-${visit.activity_type||'visita'}-${visit.date}-${visit.id}.xlsx`);}
 export async function exportParticipants(data,profile){await download(await buildParticipantsWorkbook(data,profile,{logo:await readLogo()}),'Participantes-JUPA.xlsx');}
