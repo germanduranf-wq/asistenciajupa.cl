@@ -11,8 +11,10 @@ Deno.serve(async req => {
   const admin=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
   const {data:{user},error:authError}=await admin.auth.getUser(token);
   if(authError||!user)return reply({error:'Sesión inválida. Vuelve a ingresar.'},401);
-  const {data:profile,error:profileReadError}=await admin.from('v3_profiles').select('*').eq('id',user.id).single();
-  if(profileReadError||!profile?.active)return reply({error:'Cuenta sin acceso activo.'},403);
+  const {data:profile,error:profileReadError}=await admin.from('v3_profiles').select('*').eq('id',user.id).maybeSingle();
+  if(profileReadError)return reply({error:'La función no pudo consultar el perfil. Revisa que super-responder tenga el código V3 y que exista public.v3_profiles.',code:'PROFILE_READ_FAILED'},500);
+  if(!profile)return reply({error:'Tu sesión no tiene una cuenta asociada en usuarios. Cierra sesión e ingresa otra vez. Si continúa, revisa el ID de Authentication y usuarios.',code:'PROFILE_NOT_FOUND'},403);
+  if(!profile.active)return reply({error:'Tu cuenta está desactivada. Un administrador debe activarla antes de gestionar contraseñas.',code:'ACCOUNT_INACTIVE'},403);
   const body=await req.json();
   const goodPassword=(p:unknown)=>typeof p==='string'&&p.length>=12&&p.length<=128;
   if(body.action==='change_own_password'){
@@ -44,7 +46,8 @@ Deno.serve(async req => {
    return reply({ok:true,id:created.user.id});
   }
   if(!/^[0-9a-f-]{36}$/i.test(body.id||''))return reply({error:'Usuario inválido.'},400);
-  const {data:target}=await admin.from('v3_profiles').select('id,role,active,must_change_password').eq('id',body.id).maybeSingle();
+  const {data:target,error:targetError}=await admin.from('v3_profiles').select('id,role,active,must_change_password').eq('id',body.id).maybeSingle();
+  if(targetError)return reply({error:'No se pudo consultar la cuenta que quieres modificar. Revisa la configuración V3 de la función.',code:'TARGET_READ_FAILED'},500);
   if(!target)return reply({error:'La cuenta no existe.'},404);
   if(body.action==='update'){
    if(body.id===user.id)return reply({error:'No puedes desactivar tu propia cuenta.'},400);
