@@ -49,7 +49,8 @@ test('interfaz ofrece reincorporación por clase y a perfiles centrales',()=>{
  const p={active:true,role:'clase',class_id:'san-carlos'};
  assert.equal(canPerson(p,'san-carlos','reactivate'),true);
  assert.equal(canPerson(p,'otra','reactivate'),false);
- assert.equal(canPerson(p,'san-carlos','retire'),false);
+ assert.equal(canPerson(p,'san-carlos','retire'),true);
  for(const role of ['admin','jefatura','secretaria']) assert.equal(canPerson({...p,role},'otra','reactivate'),true);
  assert.equal(canPerson({...p,role:'encargado'},null,'reactivate'),false);
 });
+

@@ -477,10 +477,10 @@ export async function deletedMembers(){
  const p=await fetchProfile();if(!['admin','jefatura','secretaria'].includes(p.role))throw Error('Sin acceso.');return readDemo().deleted_members||[];
 }
 export async function deleteMember(person,confirmation,reason){
- if(demo){const d=readDemo(),p=await fetchProfile();if(!['admin','jefatura','secretaria'].includes(p.role)||!p.active||p.must_change_password)throw Error('Sin acceso.');
- const current=d.people.find(x=>x.id===person.id);if(!current)throw Error('El participante ya no existe.');
+ if(demo){const d=readDemo(),p=await fetchProfile();if(!p.active||p.must_change_password)throw Error('Sin acceso.');
+ const current=d.people.find(x=>x.id===person.id);if(!current)throw Error('El participante ya no existe.');if(!canPerson(p,current,'delete'))throw Error('Solo puedes eliminar participantes de tu clase.');
  if(confirmation!==`${current.first_name} ${current.last_name}`||reason.trim().length<5||reason.trim().length>500)throw Error('Confirma el nombre y el motivo.');
- if(d.attendance.some(a=>a.person_id===person.id)||d.responsibilities.some(r=>r.person_id===person.id||r.actual_person_id===person.id)||(d.letters||[]).some(l=>l.person_id===person.id)||current.merged_into||d.people.some(x=>x.merged_into===person.id))throw Error('El participante tiene historial. Consérvalo inactivo o solicita la fusión de duplicados al administrador.');
+ if((d.class_registers||[]).some(r=>r.ids.includes(person.id))||d.attendance.some(a=>a.person_id===person.id)||d.responsibilities.some(r=>r.person_id===person.id||r.actual_person_id===person.id)||(d.letters||[]).some(l=>l.person_id===person.id)||current.merged_into||d.people.some(x=>x.merged_into===person.id))throw Error('El participante tiene historial. Consérvalo inactivo o solicita la fusión de duplicados al administrador.');
  d.deleted_members=[{id:crypto.randomUUID(),nombre:confirmation,iglesia:d.classes.find(c=>c.id===current.class_id)?.name,motivo:reason.trim(),nombre_usuario:p.name,eliminado_el:new Date().toISOString()},...(d.deleted_members||[])];d.people=d.people.filter(x=>x.id!==person.id);writeDemo(d);return {};
  }
  const answer=result(await supabase.rpc('v3_eliminar_miembro',{p_id:person.id,p_confirmacion:confirmation,p_motivo:reason}));
@@ -494,7 +494,7 @@ export async function fetchClassPanel(classId){
  if(!demo)return result(await supabase.rpc('v36_clase_panel',{p_clase:classId}));
  const d=readDemo(),p=await fetchProfile();
  if(p.role==='clase'&&classId!==p.class_id)throw Error('Solo tu propia clase.');
- return {people:d.people.filter(x=>x.class_id===classId||x.secondary_class_id===classId).map(basicParticipant),events:d.bulletin_events.filter(e=>e.kind==='jupa'&&e.published),registers:(d.class_registers||[]).filter(r=>r.class_id===classId),history:p.attendance_only?[]:d.visits.filter(v=>['visita','ensayo_coro','evento_coro'].includes(v.activity_type||'visita')&&v.status==='held'&&!v.eliminado_el).map(v=>({id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,place:d.classes.find(c=>c.id===v.class_id)?.name,ids:d.attendance.filter(a=>a.visit_id===v.id&&a.present&&a.class_id===classId).map(a=>a.person_id)}))};
+ return {people:d.people.filter(x=>!x.merged_into&&(x.class_id===classId||x.secondary_class_id===classId)).map(basicParticipant),events:d.bulletin_events.filter(e=>e.kind==='jupa'&&e.published),registers:(d.class_registers||[]).filter(r=>r.class_id===classId),history:p.attendance_only?[]:d.visits.filter(v=>['visita','ensayo_coro','evento_coro'].includes(v.activity_type||'visita')&&v.status==='held'&&!v.eliminado_el).map(v=>({id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,place:d.classes.find(c=>c.id===v.class_id)?.name,ids:d.attendance.filter(a=>a.visit_id===v.id&&a.present&&a.class_id===classId).map(a=>a.person_id)}))};
 }
 export async function saveClassRegister(classId,eventId,moment,ids,version){
  if(!demo)return result(await supabase.rpc('v36_guardar_clase',{p_clase:classId,p_evento:eventId,p_momento:moment,p_ids:ids,p_version:version}));
@@ -505,3 +505,4 @@ export async function saveClassRegister(classId,eventId,moment,ids,version){
  if((old?.version||0)!==version)throw Error('Otra cuenta modificó el registro. Recarga antes de guardar.');
  d.class_registers=d.class_registers.filter(r=>r!==old).concat({class_id:classId,event_id:eventId,moment,ids:[...new Set(ids)],version:version+1});writeDemo(d);
 }
+

@@ -18,7 +18,7 @@ export function canPerson(profile, classId, action = 'view') {
   if (profile.attendance_only) return action==='create' && profile.role==='clase' && (!classId || classId===profile.class_id);
   if (['admin','jefatura','secretaria'].includes(profile.role)) return true;
   if (profile.role === 'encargado') return ['view','create','photo'].includes(action);
-  return profile.role === 'clase' && (!classId || profile.class_id === classId) && ['view','create','edit','photo','reactivate'].includes(action);
+  return profile.role === 'clase' && (!classId || profile.class_id === classId) && ['view','create','edit','photo','reactivate','retire','delete'].includes(action);
 }
 export const canPublish = p => p?.active && !p.must_change_password && ['admin','jefatura','secretaria'].includes(p.role);
 export const canSchedule = (p,d,m,c) => p?.attendance_only ? false : m!=='visita' ? canActivity(p,d,m,c,'manage') : canPublish(p) && d.activity_modules?.some(x=>x.code===m&&x.enabled) && (p.role==='admin' || (d.account_permissions||[]).some(x=>x.profile_id===p.id&&x.module===m&&(!c||!x.class_id||x.class_id===c)&&(x.can_schedule || (p.role==='jefatura'&&x.can_view&&x.can_manage))));
