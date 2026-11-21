@@ -12,7 +12,7 @@ export const configured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 export const demoAllowed = config.allowDemo === true;
 export const supabase = configured ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null;
 const db = configured ? database(supabase) : null;
-const KEY = 'jupa-demo-v6';
+const KEY = 'jupa-demo-v7';
 let demo = false;
 let demoRole = 'admin';
 export const isDemo = () => demo;
@@ -29,6 +29,7 @@ const readDemo = () => {
     const value = JSON.parse(localStorage.getItem(KEY));
     if (value?.people && value?.visits) { value.profiles = value.profiles.map(p => ({ ...p, username: p.username || p.email?.split('@')[0] })); return value; }
   } catch {}
+  localStorage.removeItem('jupa-demo-v6'); // Libera únicamente la demostración anterior.
   const d = createDemo();
   localStorage.setItem(KEY, JSON.stringify(d));
   return d;
@@ -486,3 +487,5 @@ export async function deleteMember(person,confirmation,reason){
  if(answer.photo_path){const removed=await supabase.storage.from('portraits').remove([answer.photo_path]);if(removed.error)return {warning:'Ficha eliminada y registrada en el historial. No se pudo limpiar la fotografía; avisa al administrador.'};}
  return answer;
 }
+
+

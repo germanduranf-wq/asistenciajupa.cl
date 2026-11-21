@@ -1,132 +1,66 @@
-import { today, addDays, CATEGORIES } from './domain.mjs';
-export function createDemo() {
-  const classes = ['Templo matriz', 'San Carlos', 'Carol Urzúa', 'Creta Norte', 'Las Brisas', 'San Guillermo'].map((name, i) => ({
-    id: `c${i}`,
-    name,
-    kind: i === 0 ? 'Templo matriz' : i > 3 ? 'Local' : 'Clase',
-    active: true
-  }));
-  const names = [['Germán', 'Durán'], ['Matías', 'Fuentes'], ['Benjamín', 'Soto'], ['Nicolás', 'Rojas'], ['Daniel', 'Muñoz'], ['Felipe', 'Vargas'], ['Samuel', 'Díaz'], ['Tomás', 'Vera'], ['Joaquín', 'Castro'], ['David', 'Molina'], ['Lucas', 'Pérez'], ['Esteban', 'Leiva'], ['Javiera', 'Torres'], ['Catalina', 'Silva'], ['Antonia', 'Reyes'], ['Valentina', 'Lagos'], ['Isidora', 'Morales'], ['Camila', 'Araya'], ['Fernanda', 'Vidal'], ['Daniela', 'Pinto'], ['Constanza', 'Tapia'], ['Belén', 'Bravo'], ['Sofía', 'Salas'], ['Francisca', 'Núñez']];
-  const people = names.map(([first_name, last_name], i) => ({
-    id: `p${i}`,
-    first_name: first_name.toUpperCase(),
-    last_name: last_name.toUpperCase(),
-    class_id: `c${i % 6}`,
-    category: CATEGORIES[i < 12 ? i === 0 ? 2 : i === 1 ? 4 : 0 : i === 12 ? 3 : i === 13 ? 5 : 1],
-    rut: '',
-    photo_path: null,
-    active: true,
-    created_at: new Date().toISOString()
-  }));
-  const t = today();
-  const dow = new Date(`${t}T12:00:00Z`).getUTCDay();
-  const friday = addDays(t, -((dow + 2) % 7));
-  const visits = [];
-  for (let w = 7; w >= 0; w--) {
-    visits.push({
-      id: `v${w}j`,
-      date: addDays(friday, -w * 7),
-      class_id: `c${(w + 2) % 6}`,
-      group: 'Jóvenes',
-      notes: '',
-      version: 1
-    });
-    if (w % 2 === 0) visits.push({
-      id: `v${w}s`,
-      date: addDays(friday, -w * 7),
-      class_id: `c${(w + 3) % 6}`,
-      group: 'Señoritas',
-      notes: '',
-      version: 1
-    });
-  }
-  visits.push({
-    id: 'nextj',
-    date: addDays(friday, 7),
-    class_id: 'c1',
-    group: 'Jóvenes',
-    notes: '',
-    version: 1
-  }, {
-    id: 'nexts',
-    date: addDays(friday, 14),
-    class_id: 'c3',
-    group: 'Señoritas',
-    notes: '',
-    version: 1
+import { today, addDays, CATEGORIES, groupOf } from './domain.mjs';
+
+// Exclusivamente datos locales de demostración; no se escriben en Supabase.
+export function createDemo(referenceDate = today()) {
+  const t = referenceDate;
+  const classes = ['Templo matriz','San Carlos','Carol Urzúa','Creta Norte','Las Brisas','San Guillermo','Casas Viejas','San Ramón','Local Los Lirios','Local Concha y Toro'].map((name,i)=>({id:`c${i}`,name,kind:i===0?'Templo matriz':i>=8?'Local':'Clase',active:true,address:`Calle Ficticia ${100+i}`,commune:'Puente Alto',maps_url:''}));
+  const bodies = ['Comunicaciones JUPA','Audio JUPA','Enfermería JUPA','Secretaría JUPA','Coro JUPA'].map((name,i)=>({id:`body${i}`,name,active:true}));
+  const male=['Martín','Benjamín','Tomás','Lucas','Nicolás','Daniel','Felipe','Samuel','Joaquín'];
+  const female=['Catalina','Javiera','Antonia','Valentina','Camila','Daniela','Sofía','Francisca','Isidora'];
+  const surnames=['Ejemplo Rojas','Ejemplo Silva','Ejemplo Torres','Ejemplo Lagos','Ejemplo Castro','Ejemplo Soto','Ejemplo Vera','Ejemplo Díaz'];
+  const cases=['Participación frecuente','Ausencia mayor a 21 días','Ausencia mayor a 42 días','Ausencia mayor a 90 días','Regresó después de más de 60 días','Sin asistencia registrada','Participación intermitente','Mayor participación reciente','Ficha inactiva con historial'];
+  const people=Array.from({length:144},(_,i)=>{
+    const c=Math.floor(i/18),slot=i%18,woman=slot>=9,scenario=slot%9;
+    return {id:`p${i}`,first_name:(woman?female:male)[scenario],last_name:surnames[c],class_id:`c${c}`,secondary_class_id:scenario===6?`c${(c+1)%8}`:null,
+      category:CATEGORIES[scenario===0?(woman?3:2):scenario===4?(woman?5:4):scenario===7?(woman?7:6):woman?1:0],
+      body_ids:[...new Set([...(scenario!==5?['body4']:[]),...(scenario%2===0?[`body${(c+scenario)%4}`]:[])])],
+      birth_date:`${Number(t.slice(0,4))-20-(i%29)}-${String(i%12+1).padStart(2,'0')}-${String(i%27+1).padStart(2,'0')}`,
+      rut:'',photo_path:null,active:scenario!==8,created_at:addDays(t,-570)+'T12:00:00Z',
+      phone:`+56 0 0000 ${String(i).padStart(4,'0')}`,contact_email:`participante${i+1}@example.invalid`,
+      emergency_contact_name:`Contacto Ficticio ${i+1}`,emergency_phone:`+56 0 0001 ${String(i).padStart(4,'0')}`,
+      full_address:`Pasaje de Demostración ${100+i}, Casa ${i%10+1}, Puente Alto (dirección ficticia)`,
+      observations:`DATOS FICTICIOS. ${cases[scenario]}. Contactos de ejemplo no utilizables.`,demo_case:scenario};
   });
-  const attendance = [];
-  for (const v of visits.filter(v => v.date <= t)) {
-    for (const [i, p] of people.entries()) {
-      if (i < 12 === (v.group === 'Jóvenes') && (i + Number(v.id[1] || 0)) % 4 !== 0) attendance.push({
-        visit_id: v.id,
-        person_id: p.id,
-        present: true,
-        class_id: p.class_id,
-        category: p.category,
-        version: 1,
-        updated_at: new Date().toISOString()
-      });
-    }
-  }
-  const responsibilities = visits.filter(v => v.date >= friday).flatMap(v => ['Predicación', 'Coordinación', 'Dirección del coro'].map((role, i) => ({
-    id: `${v.id}-${i}`,
-    visit_id: v.id,
-    role,
-    person_id: `p${(v.group === 'Jóvenes' ? 0 : 12) + i}`,
-    actual_person_id: null,
-    outcome: 'Pendiente',
-    note: '',
-    version: 1
-  })));
-  const data = {
-    activity_modules: Object.entries({servicio_jupa:'Servicio JUPA de la tarde',visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual'}).map(([code,name])=>({code,name,enabled:true})),
-    bodies: ['Comunicaciones JUPA','Audio JUPA','Enfermería JUPA','Secretaría JUPA','Coro JUPA'].map((name,i)=>({id:'body'+i,name,active:true})), bulletin_events: [], bulletin_highlights: [],
-    account_permissions: ['servicio_jupa','visita','reunion_encargados','escuela_dominical','servicio_domingo','reunion_mensual','devocional'].map((module,i)=>({id:'perm'+i,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true})),
-    classes,
-    people,
-    visits,
-    attendance,
-    responsibilities,
-    profiles: [{
-      id: 'demo-admin',
-      name: 'Administrador de prueba',
-      username: 'admin',
-      role: 'admin',
-      active: true
-    }, {
-      id: 'demo-member',
-      name: 'Encargado de prueba',
-      username: 'encargado',
-      role: 'encargado',
-      active: true
-    }],
-    audit: []
+  const moduleNames={visita:'Visitas',reunion_encargados:'Reuniones de encargados JUPA',devocional:'Devocionales JUPA',servicio_jupa:'Servicio JUPA de la tarde',escuela_dominical:'Escuela dominical',servicio_domingo:'Servicio del domingo',reunion_mensual:'Reunión mensual',ensayo_coro:'Ensayos Coro JUPA',evento_coro:'Coro en evento JUPA'};
+  const data={classes,bodies,people,visits:[],attendance:[],responsibilities:[],bulletin_events:[],bulletin_highlights:[],service_summaries:[],audit:[],
+    activity_modules:Object.entries(moduleNames).map(([code,name])=>({code,name,enabled:true})),
+    account_permissions:Object.keys(moduleNames).map((module,i)=>({id:`perm${i}`,profile_id:'demo-member',module,class_id:null,can_view:true,can_manage:true,can_export:true,can_schedule:true})),
+    profiles:[{id:'demo-admin',name:'Administrador de prueba',username:'admin',role:'admin',active:true},{id:'demo-member',name:'Cuenta de prueba',username:'encargado',role:'encargado',active:true}]};
+  const start=new Date(`${t}T12:00:00Z`); start.setUTCMonth(start.getUTCMonth()-18,1);
+  const startDate=start.toISOString().slice(0,10);
+  const shouldAttend=(p,date,sequence)=>{
+    const days=Math.round((Date.parse(t)-Date.parse(date))/86400000),s=p.demo_case;
+    if(s===5||s===1&&days<28||s===2&&days<49||s===3&&days<98||s===4&&days>21&&days<98||s===8&&days<120)return false;
+    if([1,2,3,4].includes(s))return true;
+    return (sequence+Number(p.id.slice(1))*3)%10 < (s===6?4:s===7?(days<90?9:3):8);
   };
-  for(const [i,p] of data.people.entries())p.body_ids=i%3===0?['body4','body0']:i%3===1?['body4']:[];
-  for(const [code,name] of [['ensayo_coro','Ensayos Coro JUPA'],['evento_coro','Coro en evento JUPA']]){
-   data.activity_modules.push({code,name,enabled:true});data.account_permissions.push({id:'perm-'+code,profile_id:'demo-member',module:code,class_id:null,can_view:true,can_manage:true,can_export:true});
-  }
-  for(const p of data.account_permissions)p.can_schedule=p.module==='visita';
-  // Historial reproducible: ausencia prolongada, regreso reciente y participantes sin marcas.
-  for(let offset=84;offset>=0;offset-=7){
-   for(const type of ['ensayo_coro','reunion_encargados','devocional','escuela_dominical','servicio_domingo','reunion_mensual']){
-    if(['ensayo_coro','reunion_encargados','devocional','reunion_mensual'].includes(type)&&offset%28!==0&&!(type==='ensayo_coro'&&offset%28===14))continue;
-    const v={id:'demo-'+type+'-'+offset,date:addDays(t,-offset),class_id:'c1',group:'Todos',activity_type:type,status:'held',notes:'Ejemplo ficticio',version:1};data.visits.push(v);
-    for(const [i,p]of data.people.entries()){
-     if(type==='ensayo_coro'&&!p.body_ids.includes('body4'))continue;
-     if(['escuela_dominical','servicio_domingo','reunion_mensual'].includes(type)&&p.class_id!=='c1')continue;
-     if(type==='reunion_encargados'&&!/Encargad|Ayudante/.test(p.category))continue;
-     if(i===0&&offset<49||i===3&&offset>0&&offset<70||i===4||(i+offset)%5===0)continue;
-     data.attendance.push({visit_id:v.id,person_id:p.id,present:true,class_id:p.class_id,category:p.category,version:1});
+  function activity(type,date,classId='c0',group='Todos',eventId=null){
+    const index=data.visits.length;
+    const v={id:`v${index}`,date,class_id:classId,group,activity_type:type,status:date<=t?'held':'pending',scheduled_time:type==='escuela_dominical'?'10:00':type==='devocional'?'10:30':'18:00',notes:'Actividad ficticia de demostración',version:1,...(eventId?{evento_id:eventId}:{})};
+    data.visits.push(v);
+    const local=['escuela_dominical','servicio_domingo','reunion_mensual'].includes(type);
+    const eligible=people.filter(p=>(!local||p.class_id===classId)&&(type!=='visita'||groupOf(p.category)===group)&&(!['ensayo_coro','evento_coro'].includes(type)||p.body_ids.includes('body4'))&&(type!=='reunion_encargados'||/Encargad|Ayudante/.test(p.category)));
+    if(date<=t)for(const p of eligible)if(shouldAttend(p,date,index))data.attendance.push({visit_id:v.id,person_id:p.id,present:true,class_id:p.class_id,category:p.category,version:1});
+    if(type==='visita')for(const [j,role] of ['Predicación','Coordinación','Dirección del coro'].entries()){
+      const candidates=eligible.filter(p=>p.active);const p=candidates[(index+j)%candidates.length];
+      data.responsibilities.push({id:`r${index}-${j}`,visit_id:v.id,role,person_id:p.id,actual_person_id:date<=t?p.id:null,outcome:date<=t?'Cumplió':'Pendiente',note:'Asignación ficticia',version:1});
     }
-   }
+    return v;
   }
-  data.visits.push({id:'demo-evento',date:t,class_id:'c0',group:'Todos',activity_type:'evento_coro',status:'pending',version:1,notes:'Participación del coro en el encuentro mensual JUPA',evento_id:'demo-publico'});
-  data.bulletin_events.push({id:'demo-publico',kind:'jupa',date:t,title:'Encuentro mensual JUPA',host_ids:['c0','c1'],venue:'Templo Matriz',address:'Dirección ficticia de ejemplo',maps_url:'',preaching_place:'Plaza de ejemplo',morning_time:'10:00',evening_time:'18:00',published:true,version:1});
-  data.bulletin_highlights.push({id:'aviso-demo',month:t.slice(0,7)+'-01',message:'Datos de demostración: acompáñanos en las actividades del mes.',published:true,version:1});
-  data.visits.push({id:'demo-tarde',date:t,class_id:'c0',group:'Todos',activity_type:'servicio_jupa',status:'pending',version:1,notes:'Servicio general JUPA',evento_id:'demo-publico'});
-  const demoDev=data.visits.find(v=>v.activity_type==='devocional'&&v.date===t);if(demoDev)demoDev.evento_id='demo-publico';else data.visits.push({id:'demo-devocional-evento',date:t,class_id:'c0',group:'Todos',activity_type:'devocional',status:'pending',version:1,notes:'Devocional del evento JUPA',evento_id:'demo-publico'});
-  data.service_summaries=[];
+  for(let date=startDate;date<=addDays(t,35);date=addDays(date,1)){
+    const d=new Date(`${date}T12:00:00Z`),day=d.getUTCDate(),weekDay=d.getUTCDay();
+    if(weekDay===5){activity('visita',date,`c${Math.floor(day/7)%8}`,'Jóvenes');activity('visita',date,`c${(Math.floor(day/7)+3)%8}`,'Señoritas');}
+    if(weekDay===0)for(let c=0;c<8;c++){activity('escuela_dominical',date,`c${c}`);activity('servicio_domingo',date,`c${c}`);}
+    if(day===10)for(let c=0;c<8;c++)activity('reunion_mensual',date,`c${c}`);
+    if(day===8||day===22)activity('ensayo_coro',date);
+    if(day===8)activity('reunion_encargados',date);
+    if(day===24){
+      const id=`evento-${date}`,host_ids=['c0',`c${d.getUTCMonth()%7+1}`];
+      data.bulletin_events.push({id,kind:'jupa',date,title:'Encuentro mensual JUPA · Demostración',host_ids,venue:'Templo Matriz',address:'Calle Ficticia 100',morning_time:'10:30',evening_time:'18:00',preaching_place:'Plaza de Demostración',published:true,version:1});
+      activity('devocional',date,'c0','Todos',id);activity('servicio_jupa',date,'c0','Todos',id);activity('evento_coro',date,'c0','Todos',id);
+    }
+  }
+  data.bulletin_highlights.push({id:'aviso-demo',month:t.slice(0,7)+'-01',message:'Explora 144 participantes ficticios y 18 meses de actividades. Prueba los filtros de clase, jóvenes y señoritas, semestre y seguimiento de 21/42 días. Ningún contacto corresponde a una persona real.',published:true,version:1});
   return data;
 }
+
