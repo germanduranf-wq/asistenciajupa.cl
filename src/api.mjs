@@ -1,3 +1,5 @@
+import {basicParticipant} from './attendance-roster.mjs';
+import {encode} from './schema.mjs';
 import {database} from './database.mjs';
 import {summaryPayload,canSummary} from './service-summary.mjs';
 import { canPerson, canActivity, eligiblePerson, localActivity, MODULES, canSchedule } from './access.mjs';
@@ -59,7 +61,7 @@ export async function fetchAll() {
     const d = readDemo(), p = await fetchProfile();
     const visits = d.visits.filter(v => !v.eliminado_el && (canActivity(p,d,v.activity_type || 'visita',v.class_id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)));
     const ids = new Set(visits.filter(v=>canActivity(p,d,v.activity_type||'visita',v.class_id)).map(v => v.id));
-    return { ...d, archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
+    return { ...d, attendance_directory:d.people.filter(x=>!x.merged_into).map(basicParticipant), archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
   }
   const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions', 'bodies', 'bulletin_events', 'bulletin_highlights'];
   const responses = await Promise.all(tables.map(async table => {
@@ -73,6 +75,7 @@ export async function fetchAll() {
     }
   }));
   const data = Object.fromEntries(tables.map((t,i)=>[t,responses[i]]));
+  data.attendance_directory=result(await db.rpc('directorio_asistencia'));
   const historical=result(await db.rpc('miembros_historicos'));
   data.people.push(...historical.filter(p=>!data.people.some(x=>x.id===p.id)));
   data.archived_visits=data.visits.filter(v=>v.eliminado_el);data.visits=data.visits.filter(v=>!v.eliminado_el);return data;
@@ -80,9 +83,10 @@ export async function fetchAll() {
 export async function fetchProfile() {
   if (demo) return {
     id: `demo-${demoRole === 'admin' ? 'admin' : 'member'}`,
-    role: demoRole,
+    role: demoRole==='asistencia'?'clase':demoRole,
+    attendance_only:demoRole==='asistencia',
     name: demoRole === 'admin' ? 'Administrador de prueba' : 'Cuenta de prueba',
-    class_id: demoRole === 'clase' ? 'c1' : null,
+    class_id: ['clase','asistencia'].includes(demoRole) ? 'c1' : null,
     active: true
   };
   const { data: {session} } = await supabase.auth.getSession();
@@ -105,7 +109,7 @@ export async function saveAttendance(visit, person, present, version) {
   if (demo) {
     if (!canEdit(visit, demoRole)) throw Error('La visita está fuera del plazo de edición.');
     const d = readDemo();
-    if (!eligiblePerson(visit,person,d) || visit.status === 'suspended') throw Error('Participante o actividad no disponible.');
+    if (!person.active || visit.status === 'suspended') throw Error('Participante o actividad no disponible.');
     if (present) d.visits = d.visits.map(v => v.id === visit.id ? { ...v,status:'held' } : v);
     const old = d.attendance.find(a => a.visit_id === visit.id && a.person_id === person.id);
     if ((old?.version || 0) !== version) throw Error('Otro encargado modificó esta asistencia. Actualizamos el registro; inténtalo de nuevo.');
@@ -150,12 +154,14 @@ export async function savePerson(person) {
       ...payload
     } : p) : [...d.people, payload];
     writeDemo(d);
-    return payload;
+    return prof.attendance_only?basicParticipant(payload):payload;
   }
   const {
     id,
     ...values
   } = payload;
+  const profile=await fetchProfile();
+  if(profile.attendance_only){if(id)throw Error('Esta cuenta solo puede agregar participantes nuevos.');return result(await db.rpc('crear_participante_asistencia',{p_datos:encode(values)}));}
   return result(id ? await db.from('people').update(values).eq('id', id).select().single() : await db.from('people').insert(values).select().single());
 }
 export async function saveClass(values) {
@@ -326,7 +332,7 @@ export async function manageUser(values) {
         username: values.username,
         role: values.role,
         class_id: values.class_id || null,
-        active: true
+        active: true,attendance_only:values.attendance_only===true
       });
     } else if (values.action === 'update') {
       d.profiles = d.profiles.map(p => p.id === values.id ? {

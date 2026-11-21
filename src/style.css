@@ -85,3 +85,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{min-width:0}input,
 @media(max-width:350px){.home-area-grid{grid-template-columns:minmax(0,1fr)}}
 
 .home-detail-grid{align-items:start}.home-detail{max-height:470px;overflow-y:auto}.home-area-grid{grid-template-columns:repeat(auto-fit,minmax(165px,1fr))}@media(max-width:760px){.home-area-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:350px){.home-area-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* V3.5: filtros legibles en móviles y con texto ampliado. */
+@media(max-width:760px){.attendance-filters>.roster-filter{flex:1 0 100%;max-width:100%}.attendance-filters input,.attendance-filters select{font-size:1rem}.attendance-filters>select:not(.roster-filter){flex:1 1 180px}.list-subhead>div{flex-wrap:wrap}}

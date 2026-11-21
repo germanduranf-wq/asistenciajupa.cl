@@ -2,6 +2,37 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' };
 const reply = (body: unknown, status=200) => new Response(JSON.stringify(body), {status,headers});
 const roles = ['admin','encargado','jefatura','secretaria','clase','coro'];
+// One class per request: retries preserve all existing accounts and passwords.
+async function provisionClassAccounts(admin:any,classId:string,password:string,actor:string){
+ const {data:c,error:classError}=await admin.from('iglesias').select('id,nombre,tipo,activo').eq('id',classId).maybeSingle();
+ if(classError)throw Error('No se pudo consultar la clase.');
+ if(!c?.activo||c.tipo==='Local')throw Error('Selecciona una clase activa o el Templo Matriz.');
+ const stem=c.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ if(!stem||stem.length>29)throw Error('El nombre de la clase necesita un usuario abreviado. Crea sus cuentas individualmente.');
+ const rows=[];
+ for(const limited of [false,true]){
+  const username=`${stem}.${limited?'asistencia':'jupa'}`;
+  const {data:existing,error:existingError}=await admin.from('usuarios').select('id,usuario,activo').eq('rol','clase').eq('iglesia_id',c.id).eq('solo_asistencia',limited);
+  if(existingError)throw Error('Aplica primero la migración V3.5 en la base de datos.');
+  if(existing.length){rows.push(...existing.map((p:any)=>({username:p.usuario,status:'existing',active:p.activo})));continue;}
+  const {data:collision,error:collisionError}=await admin.from('usuarios').select('id').eq('usuario',username).maybeSingle();
+  if(collisionError)throw Error('No se pudo comprobar el nombre de usuario.');
+  if(collision){rows.push({username,status:'error',message:'El nombre ya pertenece a otra cuenta. Revisa su clase y perfil; no se modificó.'});continue;}
+  const {data:created,error}=await admin.auth.admin.createUser({email:`${username}@usuarios.jupa.invalid`,password,email_confirm:true});
+  if(error||!created?.user){rows.push({username,status:'error',message:'No se creó en Authentication. Comprueba el nombre y los requisitos de contraseña.'});continue;}
+  const {error:profileError}=await admin.rpc('v3_completar_cuenta_clase',{p_id:created.user.id,p_clase:c.id,p_limitada:limited,p_usuario:username,p_actor:actor});
+  if(profileError){
+   // A network timeout can occur after commit. Never delete an account with a saved profile.
+   const check=await admin.from('usuarios').select('id').eq('id',created.user.id).maybeSingle();
+   if(check.data){rows.push({username,status:'created'});continue;}
+   if(check.error){rows.push({username,status:'error',message:'Resultado pendiente de verificar. Revisa Authentication y usuarios antes de reintentar.'});continue;}
+   const cleanup=await admin.auth.admin.deleteUser(created.user.id);
+   rows.push({username,status:'error',message:cleanup.error?'No se guardó el perfil y no se pudo retirar la cuenta de Authentication. Revisa ambas tablas.':'No se guardó el perfil; se retiró la cuenta recién creada. Revisa la migración o vuelve a consultar las cuentas existentes.'});continue;
+  }
+  rows.push({username,status:'created'});
+ }
+ return rows;
+}
 Deno.serve(async req => {
  if (req.method==='OPTIONS') return new Response('ok',{headers});
  if (req.method!=='POST') return reply({error:'Método no permitido.'},405);
@@ -32,15 +63,21 @@ Deno.serve(async req => {
    return reply({ok:true});
   }
   if(profile.role!=='admin'||profile.must_change_password)return reply({error:'Acceso reservado al administrador.'},403);
+  if(body.action==='provision_class_accounts'){
+   if(!goodPassword(body.password)||!/^\d+$/.test(String(body.class_id||'')))return reply({error:'Selecciona una clase y una contraseña temporal de 12 a 128 caracteres.'},400);
+   try{return reply({ok:true,accounts:await provisionClassAccounts(admin,String(body.class_id),body.password,user.id)});}catch(e){return reply({error:(e as Error).message},400);}
+  }
   if(body.action==='create'){
    const username=typeof body.username==='string'?body.username.trim().toLowerCase():'';
    if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)||typeof body.name!=='string'||!body.name.trim()||body.name.length>100||!goodPassword(body.password)||!roles.includes(body.role))return reply({error:'Revisa nombre, usuario, perfil y contraseña (12 a 128 caracteres).'},400);
    if(body.role==='clase'&&!body.class_id)return reply({error:'Selecciona la clase de esta cuenta.'},400);
+   if(body.attendance_only&&body.role!=='clase')return reply({error:'Solo asistencia requiere el perfil Cuenta de clase.'},400);
    if(body.class_id){const c=await admin.from('v3_classes').select('id').eq('id',body.class_id).eq('active',true).maybeSingle();if(!c.data)return reply({error:'Clase no disponible.'},400);}
+   if(body.role==='clase'){const c=await admin.from('iglesias').select('tipo').eq('id',body.class_id).single();if(c.error||c.data.tipo==='Local')return reply({error:'Los locales no requieren cuentas. Selecciona una clase o Templo Matriz.'},400);}
    const email=`${username}@usuarios.jupa.invalid`;
    const {data:created,error}=await admin.auth.admin.createUser({email,password:body.password,email_confirm:true});
    if(error)return reply({error:'No se pudo crear la cuenta. Comprueba que el usuario no exista y que la contraseña cumpla los requisitos.'},400);
-   const {error:profileError}=await admin.from('v3_profiles').insert({id:created.user.id,name:body.name.trim(),email,username,role:body.role,class_id:body.class_id||null,must_change_password:true});
+   const {error:profileError}=await admin.from('v3_profiles').insert({id:created.user.id,name:body.name.trim(),email,username,role:body.role,class_id:body.class_id||null,must_change_password:true,attendance_only:body.attendance_only===true});
    if(profileError){await admin.auth.admin.deleteUser(created.user.id);return reply({error:'No se pudo crear el perfil. Comprueba que la migración 2.0 esté aplicada.'},400);}
    await admin.from('v3_audit_log').insert({actor:user.id,action:'CREATE_ACCOUNT',table_name:'profiles',record_id:created.user.id});
    return reply({ok:true,id:created.user.id});

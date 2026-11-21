@@ -13,7 +13,7 @@ export function activityGroups(profile,data){
   {id:'choir',label:'Coro JUPA',description:'Programación y asistencia del coro.',items:[
    modules.includes('ensayo_coro')&&item('ensayo_coro','Ensayos de coro','Programa ensayos, registra asistencia y consulta participación.'),
    modules.includes('evento_coro')&&item('evento_coro','Coro en evento JUPA','Participación del coro en el encuentro mensual.')]},
-  {id:'local',label:youthLabel(profile,data),description:'Actividades internas de las clases y del Templo Matriz.',items:[
+  {id:'local',label:youthLabel(profile,data),description:profile.attendance_only?'Selecciona el servicio para registrar asistencia. La cuenta general prepara las fechas.':'Actividades internas de las clases y del Templo Matriz.',items:[
    modules.includes('escuela_dominical')&&item('escuela_dominical','Escuela dominical','Domingos por clase y seguimiento de registros.'),
    modules.includes('servicio_domingo')&&item('servicio_domingo','Servicio del domingo','Asistencia de la juventud al servicio de la tarde.'),
    modules.includes('reunion_mensual')&&item('reunion_mensual','Reunión mensual de la clase','Reunión interna de cada clase o del Templo Matriz.')]},

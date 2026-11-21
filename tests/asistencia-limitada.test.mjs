@@ -1,0 +1,65 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {setup,as,uid} from './support/database.mjs';
+import {canActivity,canPerson,canSchedule} from '../src/access.mjs';
+import {rosterOptions,matchesRoster,basicParticipant} from '../src/attendance-roster.mjs';
+const migrations=['202610230001_corregir_alta_miembros','202610230002_resumenes_secretaria','202610240001_formato_nombres','202611180001_navegacion_evento_eliminacion','202611180002_locales_sin_juventud','202611200001_contacto_miembros','202611200002_cuentas_asistencia_invitados'];
+test('V3.5: privacidad, invitados, programación y creación de cuentas',async()=>{
+ const db=await setup(migrations);
+ try{
+  await db.exec(await readFile(new URL('../supabase/migrations/202611200002_cuentas_asistencia_invitados.sql',import.meta.url),'utf8'));
+  await db.exec(`update public.modulos set habilitado=true;update public.usuarios set solo_asistencia=true where usuario='cuenta4';
+  insert into public.permisos(usuario_auth_id,modulo,iglesia_id,puede_ver,puede_registrar,puede_exportar) select '${uid(4)}',m,1,true,true,true from unnest(array['escuela_dominical','servicio_domingo','reunion_mensual']) m;
+  insert into public.permisos(usuario_auth_id,modulo,iglesia_id,puede_ver,puede_registrar) values('${uid(5)}','reunion_mensual',2,true,true),('${uid(6)}','ensayo_coro',null,true,true),('${uid(3)}','reunion_encargados',null,true,true);
+  insert into public.miembros(id,nombres,apellidos,iglesia_id,categoria,telefono,direccion_completa) values(100,'Invitado','Externo',2,'Joven','PRIVADO','DIRECCION SECRETA'),(101,'Propio','Clase',1,'Joven','PRIVADO2','DIRECCION2');
+  insert into public.actividades(id,date,iglesia_id,"group",tipo_actividad) values(100,current_date,1,'Todos','reunion_mensual'),(101,current_date,2,'Todos','reunion_mensual'),(102,current_date,1,'Todos','ensayo_coro'),(103,current_date,1,'Todos','reunion_encargados');`);
+  await as(db,4);
+  assert.equal((await db.query('select * from public.miembros')).rows.length,0);
+  assert.equal((await db.query('select * from public.v3_profiles')).rows[0].attendance_only,true);
+  const roster=(await db.query('select * from public.v3_directorio_asistencia()')).rows;
+  assert.equal(roster.length,2);assert(!JSON.stringify(roster).includes('PRIVADO'));assert(!('rut' in roster[0]));
+  assert.equal((await db.query("select jupa_v3.can_activity('reunion_mensual',1,'export') ok")).rows[0].ok,false);
+  const data={iglesia_id:1,nombres:'Nuevo',apellidos:'Participante',categoria:'Joven',telefono:'NUEVO PRIVADO',direccion_completa:'NUEVA DIRECCION'};
+  const made=(await db.query('select public.v3_crear_participante_asistencia($1) p',[data])).rows[0].p;
+  assert(!('telefono' in made));assert.equal(made.activo,true);
+  assert.equal((await db.query('select * from public.miembros where id=$1',[made.id])).rows.length,0);
+  assert.equal((await db.query("update public.miembros set nombres='No' where id=101 returning id")).rows.length,0);
+  await assert.rejects(()=>db.query('select public.v3_crear_participante_asistencia($1)',[{...data,iglesia_id:2}]),/propia clase/);
+  await assert.rejects(()=>db.query('select public.v3_crear_participante_asistencia($1)',[{...data,otra_iglesia_id:2}]),/propia clase/);
+  await assert.rejects(()=>db.query("insert into public.miembros(nombres,apellidos,iglesia_id,otra_iglesia_id,categoria) values('No','Otro',1,2,'Joven')"),/propia clase/);
+  for(const query of ["select public.v3_save_visit('{}','{}')","select public.v3_set_activity_status(100,'held','',1,1)","select public.v3_ensure_sundays(current_date,current_date)","select * from public.v3_historial_miembro(101,current_date,current_date)"])await assert.rejects(()=>db.query(query),/solo registra asistencia/);
+  await db.query('select public.v3_set_attendance(100,100,true,0)');
+  await assert.rejects(()=>db.query('select public.v3_set_attendance(101,101,true,0)'),/permiso/);
+  await assert.rejects(()=>db.query('select public.v3_set_photo(101,$1)',['101/fake.webp']),/permiso/);
+  await assert.rejects(()=>db.query("select public.v3_completar_cuenta_clase($1,3,true,'clasec.asistencia',$2)",[uid(8),uid(1)]),/permission/);
+  await as(db,5);
+  const elsewhere=(await db.query('select * from public.v3_presencias_otras_clases(101)')).rows;assert.equal(elsewhere[0].miembro_id,100);
+  await assert.rejects(()=>db.query('select public.v3_set_attendance(101,100,true,0)'),/ya está presente/);
+  // Existing class management remains available for its own people, never for guests.
+  assert.equal((await db.query('select telefono from public.miembros where id=100')).rows[0].telefono,'PRIVADO');
+  assert.equal((await db.query("update public.miembros set nombres='No' where id=101 returning id")).rows.length,0);
+  await as(db,6);await db.query('select public.v3_set_attendance(102,101,true,0)');
+  await as(db,3);await db.query('select public.v3_set_attendance(103,101,true,0)');
+  await db.exec('reset role');await db.query('update public.usuarios set debe_cambiar_clave=true where id=$1',[uid(4)]);
+  await as(db,4);assert.equal((await db.query('select * from public.v3_directorio_asistencia()')).rows.length,0);
+  await assert.rejects(()=>db.query('select public.v3_set_attendance(100,101,true,0)'),/permiso/);
+  await db.exec('reset role');await db.query('insert into auth.users values($1)',[uid(8)]);
+  await db.query("select public.v3_completar_cuenta_clase($1,3,true,'clasec.asistencia',$2)",[uid(8),uid(1)]);
+  const user=(await db.query('select * from public.usuarios where id=$1',[uid(8)])).rows[0];assert(user.solo_asistencia&&user.debe_cambiar_clave);
+  const perms=(await db.query('select * from public.permisos where usuario_auth_id=$1',[uid(8)])).rows;assert.equal(perms.length,3);assert(perms.every(p=>!p.puede_exportar&&!p.puede_programar));
+  await assert.rejects(()=>db.query("select public.v3_completar_cuenta_clase($1,3,true,'clasec.asistencia',$2)",[uid(8),uid(1)]),/ya tiene una cuenta/);
+  await db.exec("insert into public.iglesias(id,nombre,tipo) values(9,'Local prueba','Local')");
+  await assert.rejects(()=>db.query("select public.v3_completar_cuenta_clase($1,9,true,'local.asistencia',$2)",[uid(8),uid(1)]),/no válido/);
+ }finally{await db.close();}
+});
+test('Filtros y permisos de interfaz no amplían la edición',()=>{
+ const profile={id:'u',active:true,role:'clase',class_id:'1',attendance_only:true};
+ const data={activity_modules:[{code:'reunion_mensual',enabled:true}],account_permissions:[{profile_id:'u',module:'reunion_mensual',class_id:'1',can_view:true,can_manage:true,can_export:true}],bodies:[{id:'c',name:'Coro JUPA'}]};
+ assert(canActivity(profile,data,'reunion_mensual','1','manage'));assert(!canActivity(profile,data,'reunion_mensual','1','export'));assert(!canSchedule(profile,data,'reunion_mensual','1'));
+ assert(canPerson(profile,'1','create'));assert(!canPerson(profile,'2','create'));assert(!canPerson(profile,'1','edit'));assert(!canPerson(profile,'1','view'));
+ const guest={id:'1',class_id:'2',category:'Joven',body_ids:[],rut:'PRIVATE',phone:'PRIVATE'};
+ assert(matchesRoster(guest,'all',{activity_type:'ensayo_coro'},data));assert(!matchesRoster(guest,'choir',{},data));assert(!matchesRoster(guest,'class',{class_id:'1'},data));
+ assert(matchesRoster({...guest,secondary_class_id:'1'},'class',{class_id:'1'},data));assert(matchesRoster({...guest,body_ids:['c']},'choir',{},data));assert(matchesRoster({...guest,category:'Ayudante de señoritas'},'leaders',{},data));
+ assert(!('rut' in basicParticipant(guest)));assert(!('phone' in basicParticipant(guest)));assert.equal(rosterOptions({activity_type:'ensayo_coro'})[0][0],'choir');
+});
