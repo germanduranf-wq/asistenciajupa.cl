@@ -489,3 +489,19 @@ export async function deleteMember(person,confirmation,reason){
 }
 
 
+
+export async function fetchClassPanel(classId){
+ if(!demo)return result(await supabase.rpc('v36_clase_panel',{p_clase:classId}));
+ const d=readDemo(),p=await fetchProfile();
+ if(p.role==='clase'&&classId!==p.class_id)throw Error('Solo tu propia clase.');
+ return {people:d.people.filter(x=>x.class_id===classId||x.secondary_class_id===classId).map(basicParticipant),events:d.bulletin_events.filter(e=>e.kind==='jupa'&&e.published),registers:(d.class_registers||[]).filter(r=>r.class_id===classId),history:p.attendance_only?[]:d.visits.filter(v=>['visita','ensayo_coro','evento_coro'].includes(v.activity_type||'visita')&&v.status==='held'&&!v.eliminado_el).map(v=>({id:v.id,date:v.date,type:v.activity_type||'visita',group:v.group,place:d.classes.find(c=>c.id===v.class_id)?.name,ids:d.attendance.filter(a=>a.visit_id===v.id&&a.present&&a.class_id===classId).map(a=>a.person_id)}))};
+}
+export async function saveClassRegister(classId,eventId,moment,ids,version){
+ if(!demo)return result(await supabase.rpc('v36_guardar_clase',{p_clase:classId,p_evento:eventId,p_momento:moment,p_ids:ids,p_version:version}));
+ const d=readDemo(),p=await fetchProfile();if(p.role==='clase'&&classId!==p.class_id)throw Error('Solo tu propia clase.');
+ const e=d.bulletin_events.find(e=>e.id===eventId&&e.published);if(!e||!canEdit(e,p.role))throw Error('Fecha fuera de plazo.');
+ if(ids.some(id=>!d.people.some(x=>x.id===id&&(x.class_id===classId||x.secondary_class_id===classId))))throw Error('Solo participantes de tu clase.');
+ d.class_registers||=[];const old=d.class_registers.find(r=>r.class_id===classId&&r.event_id===eventId&&r.moment===moment);
+ if((old?.version||0)!==version)throw Error('Otra cuenta modificó el registro. Recarga antes de guardar.');
+ d.class_registers=d.class_registers.filter(r=>r!==old).concat({class_id:classId,event_id:eventId,moment,ids:[...new Set(ids)],version:version+1});writeDemo(d);
+}

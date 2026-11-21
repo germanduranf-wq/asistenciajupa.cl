@@ -4,6 +4,7 @@ export function activityGroups(profile,data){
  const modules=modulesFor(profile,data),central=canPublish(profile);
  const item=(id,label,description)=>({id,label,description});
  return [
+  {id:'class-jupa',label:'Mi clase en JUPA',description:'Registros independientes de Secretaría.',items:['clase','admin','jefatura','secretaria'].includes(profile.role)?[item('class_participation','Participación de mi clase',profile.attendance_only?'Registra punto de predicación y servicio de la tarde.':'Registra encuentros y consulta visitas y coro de tu juventud.')]:[]},
   {id:'jupa',label:'JUPA',description:'Encuentro mensual y reuniones de encargados.',items:[
    (central||modules.includes('devocional')||modules.includes('servicio_jupa'))&&item('monthly_jupa','Evento mensual JUPA','Devocional de la mañana y servicio de la tarde, en un solo lugar.'),
    modules.includes('reunion_encargados')&&item('reunion_encargados','Reunión de encargados JUPA','Programa reuniones y registra a los encargados.')]},
@@ -35,3 +36,4 @@ export function registrationOverview(data,profile,type,from,to){
    never:!all.some(v=>v.status!=='suspended'&&recorded(v,data))};
  });
 }
+

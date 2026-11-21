@@ -1,3 +1,4 @@
+import {ClassParticipation} from './class-participation.jsx';
 import {activityGroups} from './navigation.mjs';
 import {rosterOptions,matchesRoster} from './attendance-roster.mjs';
 import {ClassAccountsAdmin} from './class-accounts.jsx';
@@ -171,6 +172,7 @@ function App() {
     visits: ['Visitas', 'Organiza las visitas y registra la asistencia.'],
     people: ['Participantes', 'Hermanos y hermanas de nuestra jupa.'],
     stats: ['Estadísticas', 'Una mirada a nuestra participación.'],
+    class_participation: ['Participación de mi clase','Encuentros mensuales y seguimiento de visitas y coro.'],
     activities: ['Actividades','Programación y asistencia según tus permisos.'],
     bulletin: ['Avisos JUPA','Prepara los avisos que se comparten con la juventud.'],
     summaries: ['Resúmenes de Secretaría','Servicios JUPA, devocionales y reuniones con sus totales.'],
@@ -226,6 +228,7 @@ function App() {
  {page === 'attendance' && currentVisit && <Attendance key={currentVisit.id} visit={currentVisit} data={data} profile={profile} className={className} go={go} onRefresh={refresh} notify={notify} setModal={setModal} online={online} dirtyRef={dirtyAttendance} onMarks={rows=>setData(d=>({...d,attendance:d.attendance.filter(a=>!rows.some(r=>r.visit_id===a.visit_id&&r.person_id===a.person_id)).concat(rows)}))} />}
  {page === 'attendance' && !currentVisit && <Empty icon={CalendarDays} title="No encontramos la visita" text="Vuelve al listado para seleccionar una visita." action={<button className="button primary" onClick={() => go('visits')}>Ver visitas</button>} />}
  {page==='home'&&profile.attendance_only&&<ActivityHub data={data} profile={profile} go={go}/>}
+ {page==='class_participation'&&['clase','admin','jefatura','secretaria'].includes(profile.role)&&<ClassParticipation profile={profile} data={data}/>} 
  {page==='activities'&&<ActivityHub data={data} profile={profile} go={go}/>}
  {page==='monthly_jupa'&&canViewPage&&<MonthlyJupa data={data} profile={profile} openVisit={openVisit} onSaved={saved}/>}
  {page==='schedule'&&canSchedule(profile,data,'visita',null)&&<VisitScheduler data={data} profile={profile} onSaved={saved}/>}
@@ -574,3 +577,4 @@ class ErrorBoundary extends React.Component {
   }
 }
 createRoot(document.getElementById('root')).render(<ErrorBoundary>{location.pathname.replace(/\/$/,'')==='/avisos'?<PublicBulletin/>:<App/>}</ErrorBoundary>);
+

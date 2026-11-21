@@ -40,5 +40,6 @@ test('V3.3: eliminación autorizada con auditoría y bloqueo de historial; event
 });
 test('Navegación por permisos y seguimiento sin confundir pendiente con ausencia',()=>{
  const p={id:'u',role:'clase',active:true,class_id:'1'},data={classes:[{id:'1',active:true},{id:'2',active:true}],activity_modules:[{code:'escuela_dominical',enabled:true}],account_permissions:[{profile_id:'u',module:'escuela_dominical',can_view:true}],visits:[{id:'a',class_id:'1',activity_type:'escuela_dominical',date:'2026-11-01',status:'held'},{id:'b',class_id:'1',activity_type:'escuela_dominical',date:'2026-11-08',status:'pending'},{id:'c',class_id:'1',activity_type:'escuela_dominical',date:'2026-11-15',status:'suspended'}],attendance:[]};
- assert.deepEqual(activityGroups(p,data).map(g=>g.id),['local']);const stats=registrationOverview(data,p,'escuela_dominical','2026-11-01','2026-11-18');assert.equal(stats.length,1);assert.equal(stats[0].registered,1);assert.equal(stats[0].pending,1);assert.equal(stats[0].participants,0);assert.equal(stats[0].never,false);
+ assert.deepEqual(activityGroups(p,data).map(g=>g.id),['class-jupa','local']);const stats=registrationOverview(data,p,'escuela_dominical','2026-11-01','2026-11-18');assert.equal(stats.length,1);assert.equal(stats[0].registered,1);assert.equal(stats[0].pending,1);assert.equal(stats[0].participants,0);assert.equal(stats[0].never,false);
 });
+
