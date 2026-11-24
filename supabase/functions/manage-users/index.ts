@@ -71,7 +71,7 @@ Deno.serve(async req => {
    const username=typeof body.username==='string'?body.username.trim().toLowerCase():'';
    if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)||typeof body.name!=='string'||!body.name.trim()||body.name.length>100||!goodPassword(body.password)||!roles.includes(body.role))return reply({error:'Revisa nombre, usuario, perfil y contraseña (12 a 128 caracteres).'},400);
    if(body.role==='clase'&&!body.class_id)return reply({error:'Selecciona la clase de esta cuenta.'},400);
-   if(body.attendance_only&&body.role!=='clase')return reply({error:'Solo asistencia requiere el perfil Cuenta de clase.'},400);
+   if(body.attendance_only&&!['clase','coro','secretaria'].includes(body.role))return reply({error:'Solo asistencia requiere el perfil Clase, Coro JUPA o Secretaría JUPA.'},400);
    if(body.class_id){const c=await admin.from('v3_classes').select('id').eq('id',body.class_id).eq('active',true).maybeSingle();if(!c.data)return reply({error:'Clase no disponible.'},400);}
    if(body.role==='clase'){const c=await admin.from('iglesias').select('tipo').eq('id',body.class_id).single();if(c.error||c.data.tipo==='Local')return reply({error:'Los locales no requieren cuentas. Selecciona una clase o Templo Matriz.'},400);}
    const email=`${username}@usuarios.jupa.invalid`;

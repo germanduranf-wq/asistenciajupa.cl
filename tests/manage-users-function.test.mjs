@@ -19,3 +19,14 @@ test('Función: solo administrador activo sin contraseña temporal restablece',a
  for(const p of [{active:true,role:'jefatura'},{active:true,role:'admin',must_change_password:true}]){const r=await run(p);assert.equal(r.status,403);assert.equal(r.changed,false);}
  const r=await run({active:true,role:'admin',must_change_password:false});assert.equal(r.status,200);assert.equal(r.body.ok,true);assert.equal(r.changed,true);
 });
+test('Función V3.8: crea cuentas limitadas de Coro y Secretaría; rechaza otros perfiles',async()=>{
+ for(const role of ['coro','secretaria','admin','jefatura']){
+  let handler,saved=null,created=0;
+  const client={auth:{getUser:async()=>({data:{user:{id:'admin'}}}),admin:{createUser:async()=>{created++;return {data:{user:{id:'new-user'}}};}}},from:table=>{
+   const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{active:true,role:'admin',must_change_password:false}}),insert:async row=>{if(table==='v3_profiles')saved=row;return {error:null};}};return q;
+  }};
+  new Function('Deno','createClient',code)({env:{get:()=> 'test-only'},serve:fn=>handler=fn},()=>client);
+  const response=await handler(new Request('https://example.invalid',{method:'POST',headers:{Authorization:'Bearer test-only','Content-Type':'application/json'},body:JSON.stringify({action:'create',username:role+'.asistencia',name:'Cuenta de prueba',password:'Temporal-Prueba-123!',role,attendance_only:true})}));
+  if(['coro','secretaria'].includes(role)){assert.equal(response.status,200);assert.equal(saved.attendance_only,true);assert.equal(saved.role,role);assert.equal(created,1);}else{assert.equal(response.status,400);assert.equal(created,0);}
+ }
+});

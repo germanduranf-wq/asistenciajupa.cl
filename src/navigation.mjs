@@ -4,15 +4,15 @@ export function activityGroups(profile,data){
  const modules=modulesFor(profile,data),central=canPublish(profile);
  const item=(id,label,description)=>({id,label,description});
  return [
-  {id:'class-jupa',label:'Mi clase en JUPA',description:'Registros independientes de Secretaría.',items:['clase','admin','jefatura','secretaria'].includes(profile.role)?[item('class_participation','Participación de mi clase',profile.attendance_only?'Registra punto de predicación y servicio de la tarde.':'Registra encuentros y consulta visitas y coro de tu juventud.')]:[]},
+  {id:'class-jupa',label:'Mi clase en JUPA',description:'Registros independientes de Secretaría.',items:['clase','admin','jefatura','secretaria'].includes(profile.role)&&(!profile.attendance_only||profile.role==='clase')?[item('class_participation','Participación de mi clase',profile.attendance_only?'Registra punto de predicación y servicio de la tarde.':'Registra encuentros y consulta visitas y coro de tu juventud.')]:[]},
   {id:'jupa',label:'JUPA',description:'Encuentro mensual y reuniones de encargados.',items:[
    (central||modules.includes('devocional')||modules.includes('servicio_jupa'))&&item('monthly_jupa','Evento mensual JUPA','Devocional de la mañana y servicio de la tarde, en un solo lugar.'),
-   modules.includes('reunion_encargados')&&item('reunion_encargados','Reunión de encargados JUPA','Programa reuniones y registra a los encargados.')]},
+   modules.includes('reunion_encargados')&&item('reunion_encargados','Reunión de encargados JUPA',profile.attendance_only?'Registra la asistencia de encargados e invitados.':'Programa reuniones y registra a los encargados.')]},
   {id:'visits',label:'Visitas y servicios',description:'Visitas de jóvenes y señoritas, JUMEP y salidas especiales.',items:[
    modules.includes('visita')&&item('visits','Asistencia de visitas','Consulta las visitas y registra a quienes participaron.'),
    canSchedule(profile,data,'visita',null)&&item('schedule','Programar visitas y servicios','Visitas de viernes y actividades especiales para los avisos.')]},
   {id:'choir',label:'Coro JUPA',description:'Programación y asistencia del coro.',items:[
-   modules.includes('ensayo_coro')&&item('ensayo_coro','Ensayos de coro','Programa ensayos, registra asistencia y consulta participación.'),
+   modules.includes('ensayo_coro')&&item('ensayo_coro','Ensayos de coro',profile.attendance_only?'Registra al coro y busca invitados en el filtro Todos.':'Programa ensayos, registra asistencia y consulta participación.'),
    modules.includes('evento_coro')&&item('evento_coro','Coro en evento JUPA','Participación del coro en el encuentro mensual.')]},
   {id:'local',label:youthLabel(profile,data),description:profile.attendance_only?'Selecciona el servicio para registrar asistencia. La cuenta general prepara las fechas.':'Actividades internas de las clases y del Templo Matriz.',items:[
    modules.includes('escuela_dominical')&&item('escuela_dominical','Escuela dominical','Domingos por clase y seguimiento de registros.'),
