@@ -2,7 +2,7 @@ import './class-participation.css';
 import {CalendarDays, Users, CheckCircle2, ArrowLeft, ArrowRight, Search, TrendingUp, Clock3, Music2, ClipboardCheck} from 'lucide-react';
 import React,{useState,useEffect} from 'react';
 import {fetchClassPanel,saveClassRegister} from './api.mjs';
-import {today,addDays,fullName,dateLabel,normalize,canEdit} from './domain.mjs';
+import {today,addDays,fullName,dateLabel,normalize,canEdit,editDays} from './domain.mjs';
 export function ClassParticipation({profile,data}){
  const [classId,setClass]=useState(profile.class_id||data.classes.find(c=>c.kind!=='Local')?.id||''),[panel,setPanel]=useState(null),[error,setError]=useState(''),[tab,setTab]=useState('events'),[selected,setSelected]=useState(null),[ids,setIds]=useState([]),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[search,setSearch]=useState('');
  const [followSearch,setFollowSearch]=useState('');
@@ -22,7 +22,7 @@ export function ClassParticipation({profile,data}){
  const shown=rows.filter(p=>normalize(fullName(p)).includes(normalize(followSearch)));
  const events=(panel?.events||[]).filter(e=>e.date.startsWith(month)).sort((a,b)=>b.date.localeCompare(a.date));
  const roster=activePeople.filter(p=>normalize(fullName(p)).includes(normalize(search)));
- const editable=selected&&canEdit(selected.event,profile.role)&&selected.event.date<=today();
+ const editable=selected&&canEdit(selected.event,profile);
  const switchTab=value=>{if(discard()){setTab(value);setSelected(null);setDirty(false);setMessage('')}};
  const initials=p=>[p.first_name?.[0],p.last_name?.[0]].join('');
  return <section className="cp-workspace">
@@ -37,7 +37,7 @@ export function ClassParticipation({profile,data}){
  {panel&&selected&&<><button className="cp-back" disabled={busy} onClick={()=>{if(discard()){setSelected(null);setDirty(false);setMessage('')}}}><ArrowLeft size={18}/>Volver a los encuentros</button>
  <div className="cp-section-head"><div><span className="cp-eyebrow">{dateLabel(selected.event.date)}</span><h3>{selected.moment==='punto'?'Punto de predicación':'Servicio de la tarde'}</h3><p>{selected.event.title}</p></div><span className="cp-count"><Users size={20}/><b>{ids.length}</b> presentes</span></div>
  <p className="cp-notice">Se muestran solo participantes activos de tu clase. Marca a quienes asistieron y luego guarda. El total de Secretaría se mantiene independiente.</p>
- {!editable&&<p className="cp-notice">Solo lectura: fecha futura o fuera del plazo de 21 días.</p>}
+ {!editable&&<p className="cp-notice">Solo lectura: fecha futura o fuera del plazo de {editDays(profile)} días.</p>}
  {ids.some(id=>!activeIds.has(id))&&<p className="cp-notice">Este registro conserva {ids.filter(id=>!activeIds.has(id)).length} asistencia(s) histórica(s) de personas que ya no están activas en la clase. No se borrarán al guardar.</p>}<div className="cp-card"><div className="cp-card-head"><div><h3>Lista de participantes</h3><p>{roster.length} personas en esta búsqueda</p></div><label className="cp-search"><Search size={18}/><input aria-label="Buscar participante" placeholder="Buscar por nombre" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
  <div className="cp-roster">{roster.map(p=><label key={p.id} className={'cp-person '+(ids.includes(p.id)?'is-present':'')}><span className="cp-avatar">{initials(p)}</span><span className="cp-person-name"><strong>{fullName(p)}</strong><small>{p.category}</small></span><span className="cp-check"><span>{ids.includes(p.id)?'Presente':'Marcar'}</span><input aria-label={'Asistencia de '+fullName(p)} type="checkbox" disabled={busy||!editable} checked={ids.includes(p.id)} onChange={e=>{setIds(e.target.checked?[...ids,p.id]:ids.filter(id=>id!==p.id));setDirty(true);setMessage('')}}/></span></label>)}</div>{!roster.length&&<div className="cp-empty">No encontramos participantes con ese nombre.</div>}</div>
  <div className="cp-savebar"><div><strong>{ids.length} presentes de mi clase</strong><span>{dirty?'Cambios sin guardar':'Sin cambios pendientes'}</span></div><button className="button primary" disabled={busy||!editable} onClick={save}><CheckCircle2 size={18}/>{busy?'Guardando…':'Guardar asistencia de mi clase'}</button></div></>}

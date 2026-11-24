@@ -17,8 +17,7 @@ async function fontData(style){
  })().catch(error=>{fonts.delete(style);throw error;}));
  return fonts.get(style);
 }
-export async function letterPDF(letter){
- const {jsPDF}=await import('jspdf'),pdf=new jsPDF({format:'letter',compress:true});
+async function drawLetter(pdf,letter){
  const center=pdf.internal.pageSize.getWidth()/2, right=pdf.internal.pageSize.getWidth()-25;
  const t=letterTemplates[letterTemplate(letter)];
  const [regular,bold,logo,signature]=await Promise.all([fontData('Regular'),fontData('Bold'),imageData('/cartas/logo-jupa-cartas.png'),imageData(t.signature)]);
@@ -58,8 +57,15 @@ export async function letterPDF(letter){
  pdf.setFont('EBGaramond','normal');pdf.text(t.titles,center,239,{align:'center',lineHeightFactor:1.15});
  pdf.setFontSize(9.5);const verse=pdf.splitTextToSize(t.verse,160);pdf.text(verse,center,263,{align:'center',lineHeightFactor:1.15});
  pdf.setFont('EBGaramond','bold');pdf.text(t.citation,center,263+verse.length*3.85+1,{align:'center'});
+}
+export async function lettersPDF(letters){
+ if(!letters.length)throw Error('No hay cartas para generar.');
+ const {jsPDF}=await import('jspdf'),pdf=new jsPDF({format:'letter',compress:true});
+ for(let i=0;i<letters.length;i++){if(i)pdf.addPage('letter');await drawLetter(pdf,letters[i]);}
+ pdf.setProperties({title:letters.length===1?`${letters[0].folio} · ${letters[0].name}`:'Cartas de responsabilidades JUPA',author:'Juventud Unida de Puente Alto'});
  return pdf.output('arraybuffer');
 }
+export const letterPDF=letter=>lettersPDF([letter]);
 export function summaryRows(visits){
  const friday=visits.filter(v=>new Date(v.date+'T12:00:00Z').getUTCDay()===5);
  return [...new Set(friday.map(v=>v.date))].sort().flatMap(date=>{const young=friday.filter(v=>v.date===date&&v.group==='Jóvenes'),women=friday.filter(v=>v.date===date&&v.group==='Señoritas');return Array.from({length:Math.max(young.length,women.length)},(_,i)=>({date,young:young[i],women:women[i]}));});

@@ -1,0 +1,88 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {setup,as,uid} from './support/database.mjs';
+import {canEdit,editDays,attendanceReadOnly} from '../src/domain.mjs';
+import {canSchedule,canActivity,canArchiveActivity} from '../src/access.mjs';
+const migrations=['202610230001_corregir_alta_miembros','202610230002_resumenes_secretaria','202610240001_formato_nombres','202611180001_navegacion_evento_eliminacion','202611180002_locales_sin_juventud','202611200001_contacto_miembros','202611200002_cuentas_asistencia_invitados','202611210001_seguimiento_encuentros_clases','202611210002_estado_miembros_clases','202611230001_gestion_jupa_plazos_auditoria'];
+test('V3.7: guardar no cierra; cambio de cuenta, plazos, aislamiento, Secretaría y auditoría',async()=>{
+ const db=await setup(migrations);
+ try{
+  // Repetir la migración no borra datos ni duplica estructuras.
+  await db.exec(await readFile(new URL('../supabase/migrations/'+migrations.at(-1)+'.sql',import.meta.url),'utf8'));
+  await db.exec(`update modulos set habilitado=true;
+   insert into auth.users values('${uid(8)}');insert into usuarios(id,nombre,usuario,identificador_auth,rol,iglesia_id,solo_asistencia) values('${uid(8)}','Clase A Asistencia','clasea.asistencia','limited@test.invalid','clase',1,true);
+   insert into permisos(usuario_auth_id,modulo,iglesia_id,puede_ver,puede_registrar) select u,m,1,true,true from unnest(ARRAY['${uid(4)}'::uuid,'${uid(8)}'::uuid])u cross join unnest(ARRAY['escuela_dominical','servicio_domingo','reunion_mensual'])m;
+   insert into miembros(id,nombres,apellidos,iglesia_id,categoria,telefono) values(100,'Ana','Ejemplo',1,'Señorita','PRIVADO'),(101,'Luis','Ejemplo',1,'Joven','PRIVADO');
+   insert into actividades(id,date,iglesia_id,"group",tipo_actividad) values(100,current_date-extract(dow from current_date)::int,1,'Todos','escuela_dominical'),(101,current_date-7,1,'Todos','reunion_mensual'),(102,current_date-8,1,'Todos','reunion_mensual'),(103,current_date-21,1,'Todos','reunion_mensual'),(104,current_date-22,1,'Todos','reunion_mensual'),(105,current_date+1,1,'Todos','reunion_mensual'),(106,current_date,2,'Todos','reunion_mensual');
+   insert into eventos(id,tipo,date,titulo,lugar,direccion,anfitrionas_ids,hora_manana,hora_tarde,punto_predicacion) values(100,'jupa',current_date,'Encuentro prueba','Templo','Calle',ARRAY[1,2],'10:00','18:00','Plaza');`);
+  await as(db,4);
+  await db.query('select v3_guardar_asistencias(100,$1)',[[{person_id:100,present:true,version:0}]]);
+  assert.equal((await db.query('select estado from actividades where id=100')).rows[0].estado,'held');
+  await as(db,8); // La cuenta limitada continúa lo guardado por la cuenta general.
+  await db.query('select v3_guardar_asistencias(100,$1)',[[{person_id:100,present:false,version:1},{person_id:101,present:true,version:0}]]);
+  await assert.rejects(db.query('select v3_set_attendance(100,101,false,0)'),/modific/);
+  await db.query('select v3_set_attendance(101,100,true,0)');
+  for(const id of [102,103,104])await assert.rejects(db.query('select v3_set_attendance($1,100,true,0)',[id]),/7 días/);
+  await assert.rejects(db.query('select v3_set_attendance(105,100,true,0)'),/abre/);
+  await assert.rejects(db.query('select v3_set_attendance(106,100,true,0)'),/permiso/);
+  assert.equal((await db.query('select * from miembros')).rows.length,0);
+  await db.query("select v36_guardar_clase(100,1,'punto',ARRAY[100]::bigint[],0)");
+  await as(db,4);await db.query('select v3_set_attendance(100,101,false,1)');
+  await db.query('select v3_set_attendance(103,100,true,0)');
+  await assert.rejects(db.query('select v3_set_attendance(104,100,true,0)'),/21 días/);
+  await db.query("select v36_guardar_clase(100,1,'punto',ARRAY[100,101]::bigint[],1)");
+  await db.exec('reset role');await db.exec('update eventos set date=current_date-8 where id=100');
+  await as(db,8);await assert.rejects(db.query("select v36_guardar_clase(100,1,'punto',ARRAY[]::bigint[],2)"),/7 días/);
+  await as(db,4);await db.query("select v36_guardar_clase(100,1,'punto',ARRAY[100]::bigint[],2)");
+  await as(db,1);await db.query('select v3_set_attendance(104,100,true,0)');
+  await db.exec('reset role');await db.exec("update actividades set estado='suspended',motivo_suspension='Prueba' where id=102");
+  await as(db,1);await assert.rejects(db.query('select v3_set_attendance(102,100,true,0)'),/suspendida/);
+  // Secretaría: programación y responsables de JUPA, nunca reuniones internas de una clase.
+  await as(db,3);
+  const payload={date:(await db.query('select current_date::text d')).rows[0].d,class_id:1,group:'Jóvenes',activity_type:'visita',notes:''};
+  let visit=(await db.query('select * from v3_save_visit($1,$2)',[payload,{'Predicación':100,'Coordinación':101}])).rows[0];
+  const assignments=(await db.query('select * from responsabilidades where actividad_id=$1',[visit.id])).rows;
+  assert.equal(assignments.length,2);
+  assert.equal((await db.query("select jupa_v3.can_activity('visita',1,'manage') ok")).rows[0].ok,false);
+  await assert.rejects(db.query('select v3_save_visit($1,$2)',[{...payload,activity_type:'reunion_mensual'},{}]),/permiso/);
+  const choir=(await db.query('select * from v3_save_visit($1,$2)',[{...payload,group:'Todos',activity_type:'ensayo_coro'},{}])).rows[0];
+  await db.query('select v3_set_attendance($1,100,true,0)',[choir.id]);
+  const choirVersion=(await db.query('select version from actividades where id=$1',[choir.id])).rows[0].version;
+  await db.query('select v3_archivar_actividad($1,$2,true)',[choir.id,choirVersion]);
+  await db.query('select v3_archivar_actividad($1,$2,true)',[visit.id,visit.version]);
+  await assert.rejects(db.query('select v3_archivar_actividad(100,2,true)'),/permiso/);
+  await assert.rejects(db.query('select v3_archivar_actividad($1,$2,false)',[visit.id,visit.version+1]),/permiso/);
+  let ev=(await db.query('select * from eventos where id=100')).rows[0];
+  await db.query('select v3_archivar_evento(100,$1,true)',[ev.version]);
+  await assert.rejects(db.query("select v37_actividad_admin(current_date-30,current_date)"),/administrador/);
+  await as(db,8);await assert.rejects(db.query("select v37_actividad_admin(current_date-30,current_date)"),/administrador/);
+  await as(db,1);
+  const log=(await db.query("select v37_actividad_admin(current_date-30,current_date,1,$1) data",[uid(8)])).rows[0].data;
+  assert(log.some(x=>x.action==='Marcó presente'));assert(log.some(x=>x.action==='Retiró asistencia'));assert(log.every(x=>x.username==='clasea.asistencia'));assert(!JSON.stringify(log).includes('PRIVADO'));
+  await db.query("insert into miembros(nombres,apellidos,iglesia_id,categoria) values('Borrar','Prueba',1,'Joven')");
+  const extra=(await db.query("select id from miembros where nombres='Borrar'")).rows[0].id;
+  await db.query("update miembros set activo=false where id=$1",[extra]);
+  await db.query("select v3_eliminar_miembro($1,'Borrar Prueba','Duplicado creado por error')",[extra]);
+  const deleted=(await db.query("select v37_actividad_admin(current_date,current_date,1,null,'miembros_eliminados') data")).rows[0].data;
+  assert.equal(deleted[0].detail,'Duplicado creado por error');assert.equal(deleted[0].class_name,'Clase A');
+  const firstPage=(await db.query("select v37_actividad_admin(current_date,current_date) data")).rows[0].data;
+  const nextPage=(await db.query("select v37_actividad_admin(current_date,current_date,null,null,null,$1) data",[firstPage.at(-1).id])).rows[0].data;
+  assert(nextPage.every(x=>BigInt(x.id)<BigInt(firstPage.at(-1).id)));
+  ev=(await db.query('select * from eventos where id=100')).rows[0];await db.query('select v3_archivar_evento(100,$1,false)',[ev.version]);
+  assert.equal((await db.query('select count(*)::int n from actividades where evento_id=100 and eliminado_el is null')).rows[0].n,3);
+  await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from responsabilidades where actividad_id=$1',[visit.id])).rows[0].n,2);
+  assert.equal((await db.query('select count(*)::int n from asistencias where actividad_id=$1',[choir.id])).rows[0].n,1);
+  assert.deepEqual((await db.query('select participantes_ids from registros_encuentro_clases where evento_id=100')).rows[0].participantes_ids,[100]);
+ }finally{await db.close();}
+});
+test('V3.7: permisos y mensajes coherentes en interfaz',()=>{
+ const limited={role:'clase',attendance_only:true},general={role:'clase'};
+ assert.equal(editDays(limited),7);assert(canEdit({date:'2026-11-16',status:'held'},limited,'2026-11-23'));assert(!canEdit({date:'2026-11-15'},limited,'2026-11-23'));
+ assert(canEdit({date:'2026-11-02'},general,'2026-11-23'));assert(!canEdit({date:'2026-11-01'},general,'2026-11-23'));assert(canEdit({date:'2020-01-01'},{role:'admin'},'2026-11-23'));
+ assert.match(attendanceReadOnly({date:'2026-11-23'},general,false,'2026-11-23'),/permiso/);
+ assert.match(attendanceReadOnly({date:'2026-11-23',status:'suspended'},general,true,'2026-11-23'),/suspendida/);
+ const secretary={role:'secretaria',active:true},data={activity_modules:['visita','ensayo_coro','reunion_mensual'].map(code=>({code,enabled:true}))};
+ assert(canSchedule(secretary,data,'visita',1));assert(canSchedule(secretary,data,'ensayo_coro',1));assert(!canSchedule(secretary,data,'reunion_mensual',1));assert(!canActivity(secretary,data,'visita',1,'manage'));
+ assert(canArchiveActivity(secretary,data,{activity_type:'ensayo_coro',class_id:1}));assert(!canArchiveActivity(secretary,data,{activity_type:'reunion_mensual',class_id:1}));
+});

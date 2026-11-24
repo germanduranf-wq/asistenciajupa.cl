@@ -2,7 +2,7 @@ import {basicParticipant} from './attendance-roster.mjs';
 import {encode} from './schema.mjs';
 import {database} from './database.mjs';
 import {summaryPayload,canSummary} from './service-summary.mjs';
-import { canPerson, canActivity, eligiblePerson, localActivity, MODULES, canSchedule } from './access.mjs';
+import { canPerson, canActivity, eligiblePerson, localActivity, MODULES, canSchedule, canArchiveActivity } from './access.mjs';
 import { normalizeUsername, usernameEmail } from './username.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { createDemo } from './demo.mjs';
@@ -35,6 +35,25 @@ const readDemo = () => {
   return d;
 };
 function writeDemo(d) {
+  const before=JSON.parse(localStorage.getItem(KEY)||'{}');
+  d.activity_audit=before.activity_audit||[];
+  const tables={people:'miembros',visits:'actividades',attendance:'asistencias',responsibilities:'responsabilidades',bulletin_events:'eventos',class_registers:'registros_encuentro_clases',service_summaries:'resumenes_servicios'};
+  const key=(t,x)=>x.id||[x.visit_id,x.person_id,x.event_id,x.class_id,x.moment,x.actividad_id].join(':');
+  for(const [table,label] of Object.entries(tables)){
+   const old=new Map((before[table]||[]).map(x=>[key(table,x),x]));
+   const current=new Map((d[table]||[]).map(x=>[key(table,x),x]));
+   for(const id of new Set([...old.keys(),...current.keys()])){
+    const a=old.get(id),b=current.get(id);if(JSON.stringify(a)===JSON.stringify(b))continue;
+    const row=b||a,v=d.visits.find(v=>v.id===row.visit_id),person=table==='people'?row:d.people.find(p=>p.id===row.person_id);
+    let action=!a?'Creó registro':!b?'Eliminó registro':'Actualizó registro';
+    if(table==='attendance')action=b?.present?'Marcó presente':'Retiró asistencia';
+    if(table==='people'&&a&&b&&a.active!==b.active)action=b.active?'Reincorporó participante':'Dejó participante inactivo';
+    if(['visits','bulletin_events'].includes(table)&&a&&b&&a.eliminado_el!==b.eliminado_el)action=b.eliminado_el?'Eliminó actividad del calendario':'Restauró actividad';
+    const classId=row.class_id||v?.class_id||row.host_ids?.[0],cls=d.classes.find(c=>c.id===classId);
+    d.activity_audit.unshift({id:String(Date.now()*1000+d.activity_audit.length),at:new Date().toISOString(),username:'demo.'+demoRole,actor:demoRole==='admin'?'demo-admin':'demo-member',actor_name:'Cuenta de demostración',table:label,class_id:classId,class_name:cls?.name,action,subject:[person&&[person.first_name,person.last_name].join(' '),row.title,table==='visits'?MODULES[row.activity_type||'visita']:v&&MODULES[v.activity_type||'visita'],row.date||v?.date].filter(Boolean).join(' · '),detail:table==='responsibilities'?row.role:table==='class_registers'?`${row.moment==='punto'?'Punto de predicación':'Servicio de la tarde'} · ${row.ids.length} presentes`:null});
+   }
+  }
+  d.activity_audit=d.activity_audit.slice(0,1000);
   localStorage.setItem(KEY, JSON.stringify(d));
   window.dispatchEvent(new Event('jupa-change'));
 }
@@ -62,7 +81,7 @@ export async function fetchAll() {
     const d = readDemo(), p = await fetchProfile();
     const visits = d.visits.filter(v => !v.eliminado_el && (canActivity(p,d,v.activity_type || 'visita',v.class_id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)));
     const ids = new Set(visits.filter(v=>canActivity(p,d,v.activity_type||'visita',v.class_id)).map(v => v.id));
-    return { ...d, attendance_directory:d.people.filter(x=>!x.merged_into).map(basicParticipant), archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>ids.has(r.visit_id)), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
+    return { ...d, bulletin_events:d.bulletin_events.filter(e=>!e.eliminado_el),archived_events:p.role==='admin'?d.bulletin_events.filter(e=>e.eliminado_el):[], attendance_directory:d.people.filter(x=>!x.merged_into).map(basicParticipant), archived_visits:p.role==='admin'?d.visits.filter(v=>v.eliminado_el):[], people:d.people.filter(x=>p.role==='coro'?eligiblePerson({activity_type:'ensayo_coro'},x,d):canPerson(p,x)), visits, attendance:d.attendance.filter(a=>ids.has(a.visit_id)), responsibilities:d.responsibilities.filter(r=>visits.some(v=>v.id===r.visit_id&&(ids.has(v.id)||canSchedule(p,d,v.activity_type||'visita',v.class_id)))), profiles:d.profiles.filter(x=>p.role==='admin'||x.id===p.id) };
   }
   const tables = ['classes', 'people', 'visits', 'attendance', 'responsibilities', 'profiles', 'activity_modules', 'account_permissions', 'bodies', 'bulletin_events', 'bulletin_highlights'];
   const responses = await Promise.all(tables.map(async table => {
@@ -79,7 +98,7 @@ export async function fetchAll() {
   data.attendance_directory=result(await db.rpc('directorio_asistencia'));
   const historical=result(await db.rpc('miembros_historicos'));
   data.people.push(...historical.filter(p=>!data.people.some(x=>x.id===p.id)));
-  data.archived_visits=data.visits.filter(v=>v.eliminado_el);data.visits=data.visits.filter(v=>!v.eliminado_el);return data;
+  data.archived_events=data.bulletin_events.filter(e=>e.eliminado_el);data.bulletin_events=data.bulletin_events.filter(e=>!e.eliminado_el);data.archived_visits=data.visits.filter(v=>v.eliminado_el);data.visits=data.visits.filter(v=>!v.eliminado_el);return data;
 }
 export async function fetchProfile() {
   if (demo) return {
@@ -436,13 +455,13 @@ export async function publicBulletin(month) {
 
 export async function saveAttendanceBatch(visit, changes) {
  if(!demo)return result(await db.rpc('guardar_asistencias',{p_visit:visit.id,p_changes:changes}));
- const d=readDemo(),p=await fetchProfile();if(!canEdit(visit,p.role)||!canActivity(p,d,visit.activity_type||'visita',visit.class_id,'manage'))throw Error('No tienes permiso para guardar.');
+ const d=readDemo(),p=await fetchProfile();if(!canEdit(visit,p)||!canActivity(p,d,visit.activity_type||'visita',visit.class_id,'manage'))throw Error('No tienes permiso para guardar.');
  for(const c of changes){if(c.present&&localActivity(visit.activity_type)&&d.attendance.some(a=>a.person_id===c.person_id&&a.present&&a.visit_id!==visit.id&&d.visits.some(v=>v.id===a.visit_id&&v.date===visit.date&&v.activity_type===visit.activity_type&&!v.eliminado_el&&v.status!=='suspended')))throw Error('Esta persona ya está presente en otra clase para el mismo servicio.');const old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);if((old?.version||0)!==c.version)throw Error('Otro encargado modificó una marca. Revisa los cambios pendientes.');}
  const saved=changes.map(c=>{const person=d.people.find(p=>p.id===c.person_id),old=d.attendance.find(a=>a.visit_id===visit.id&&a.person_id===c.person_id);return {...old,visit_id:visit.id,person_id:person.id,present:c.present,class_id:old?.class_id||(localActivity(visit.activity_type)?visit.class_id:person.class_id),category:old?.category||person.category,body_ids:old?old.body_ids:person.body_ids||[],version:c.version+1,updated_at:new Date().toISOString()};});
  d.attendance=d.attendance.filter(a=>!saved.some(b=>b.visit_id===a.visit_id&&b.person_id===a.person_id)).concat(saved);if(changes.some(c=>c.present))d.visits=d.visits.map(v=>v.id===visit.id?{...v,status:'held'}:v);writeDemo(d);return saved;
 }
 export async function attendanceFor(id){if(demo)return readDemo().attendance.filter(a=>a.visit_id===id);return result(await db.from('attendance').select('*').eq('visit_id',id));}
-export async function archiveActivity(v,archived=true){if(demo){const d=readDemo();d.visits=d.visits.map(x=>x.id===v.id?{...x,eliminado_el:archived?new Date().toISOString():null,version:x.version+1}:x);writeDemo(d);return;}return result(await db.rpc('archivar_actividad',{p_id:v.id,p_version:v.version,p_archivar:archived}));}
+export async function archiveActivity(v,archived=true){if(demo){const d=readDemo(),p=await fetchProfile();if(!canArchiveActivity(p,d,v)||!archived&&p.role!=='admin')throw Error('Sin permiso para eliminar o restaurar esta actividad.');const old=d.visits.find(x=>x.id===v.id);if(!old||old.version!==v.version)throw Error('La actividad cambió. Actualiza antes de continuar.');d.visits=d.visits.map(x=>x.id===v.id?{...x,eliminado_el:archived?new Date().toISOString():null,version:x.version+1}:x);writeDemo(d);return;}return result(await db.rpc('archivar_actividad',{p_id:v.id,p_version:v.version,p_archivar:archived}));}
 export async function demoOptions(){if(!configured)return demoAllowed?['admin','jefatura','secretaria','clase','coro']:[];try{return result(await db.rpc('demostraciones'))||[];}catch{return [];}}
 export async function adminDemoOptions(){if(demo)return ['admin','jefatura','secretaria','clase','coro'].map(perfil=>({perfil,habilitada:true}));return result(await db.from('demostraciones').select('*').order('perfil'));}
 export async function setDemoOption(perfil,habilitada){if(demo)return;result(await db.from('demostraciones').update({habilitada}).eq('perfil',perfil));}
@@ -499,10 +518,23 @@ export async function fetchClassPanel(classId){
 export async function saveClassRegister(classId,eventId,moment,ids,version){
  if(!demo)return result(await supabase.rpc('v36_guardar_clase',{p_clase:classId,p_evento:eventId,p_momento:moment,p_ids:ids,p_version:version}));
  const d=readDemo(),p=await fetchProfile();if(p.role==='clase'&&classId!==p.class_id)throw Error('Solo tu propia clase.');
- const e=d.bulletin_events.find(e=>e.id===eventId&&e.published);if(!e||!canEdit(e,p.role))throw Error('Fecha fuera de plazo.');
+ const e=d.bulletin_events.find(e=>e.id===eventId&&e.published);if(!e||!canEdit(e,p))throw Error('Fecha fuera de plazo.');
  if(ids.some(id=>!d.people.some(x=>x.id===id&&(x.class_id===classId||x.secondary_class_id===classId))))throw Error('Solo participantes de tu clase.');
  d.class_registers||=[];const old=d.class_registers.find(r=>r.class_id===classId&&r.event_id===eventId&&r.moment===moment);
  if((old?.version||0)!==version)throw Error('Otra cuenta modificó el registro. Recarga antes de guardar.');
  d.class_registers=d.class_registers.filter(r=>r!==old).concat({class_id:classId,event_id:eventId,moment,ids:[...new Set(ids)],version:version+1});writeDemo(d);
 }
 
+
+export async function archiveEvent(event,archived=true){
+ if(!demo)return result(await supabase.rpc('v3_archivar_evento',{p_id:event.id,p_version:event.version,p_archivar:archived}));
+ const d=readDemo(),p=await fetchProfile();if(p.role!=='admin'&&!(p.role==='secretaria'&&archived))throw Error('Sin permiso para eliminar o restaurar el evento.');
+ const e=d.bulletin_events.find(x=>x.id===event.id);if(!e||e.version!==event.version)throw Error('El evento cambió. Actualiza antes de continuar.');
+ e.eliminado_el=archived?new Date().toISOString():null;e.published=!archived;e.version++;
+ d.visits=d.visits.map(v=>v.evento_id===e.id?{...v,eliminado_el:e.eliminado_el,version:v.version+1}:v);writeDemo(d);
+}
+export async function fetchActivityAudit({from,to,classId,actor,table,before}){
+ if(!demo)return result(await supabase.rpc('v37_actividad_admin',{p_desde:from,p_hasta:to,p_clase:classId||null,p_actor:actor||null,p_tabla:table||null,p_antes:before||null}));
+ if((await fetchProfile()).role!=='admin')throw Error('Acceso reservado al administrador.');
+ return (readDemo().activity_audit||[]).filter(r=>{const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(r.at));return day>=from&&day<=to&&(!classId||classId===r.class_id)&&(!actor||actor===r.actor)&&(!table||table===r.table)&&(!before||BigInt(r.id)<BigInt(before));}).sort((a,b)=>Number(BigInt(b.id)-BigInt(a.id))).slice(0,50);
+}

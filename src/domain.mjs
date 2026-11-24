@@ -25,7 +25,9 @@ export function addDays(day, count) {
   d.setUTCDate(d.getUTCDate() + count);
   return d.toISOString().slice(0, 10);
 }
-export const canEdit = (visit, role, now = today()) => role === 'admin' || visit.date <= now && now <= addDays(visit.date, 21);
+export const editDays = profile => profile?.attendance_only || profile === 'asistencia' ? 7 : 21;
+export const canEdit = (visit, profile, now = today()) => !!visit && ((profile?.role || profile) === 'admin' || visit.date <= now && now <= addDays(visit.date, editDays(profile)));
+export const attendanceReadOnly = (visit,profile,permitted=true,now=today()) => visit.eliminado_el ? 'Esta actividad fue eliminada. El administrador puede restaurarla.' : visit.status==='suspended' ? 'Esta actividad está suspendida. Revisa su estado antes de registrar asistencia.' : !permitted ? 'Tu cuenta no tiene permiso para registrar asistencia en esta actividad.' : !canEdit(visit,profile,now) ? visit.date>now ? 'La asistencia abre el día de la actividad.' : `Han transcurrido más de ${editDays(profile)} días. Solicita la corrección a una cuenta con plazo vigente o al administrador.` : '';
 export const dateLabel = (day, options = {}) => new Date(`${day}T12:00:00`).toLocaleDateString('es-CL', {
   day: 'numeric',
   month: 'long',
