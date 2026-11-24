@@ -1,4 +1,13 @@
 import {belongsToClass,localActivity} from './access.mjs';
+import {CATEGORIES} from './domain.mjs';
+// La categoría es el dato explícito disponible; nunca inferirlo por el nombre.
+export function matchesAttendanceGender(person,gender){
+ if(gender==='all')return true;
+ const index=CATEGORIES.indexOf(person.category);
+ if(index<0)return false;
+ return gender==='men'?index%2===0:gender==='women'?index%2===1:false;
+}
+export const initialAttendanceGender=visit=>visit.group==='Jóvenes'?'men':visit.group==='Señoritas'?'women':'all';
 const leaders=['Encargado de jóvenes','Encargada de señoritas','Ayudante de jóvenes','Ayudante de señoritas'];
 export function rosterOptions(visit){
  if(['ensayo_coro','evento_coro'].includes(visit.activity_type))return [['choir','Solo Coro JUPA'],['all','Todos · incluir invitados']];

@@ -1,4 +1,7 @@
 import './class-participation.css';
+import {AttendanceGenderFilter} from './attendance-gender.jsx';
+import {matchesAttendanceGender} from './attendance-roster.mjs';
+import {mergeAttendanceSelection} from './attendance-draft.mjs';
 import {CalendarDays, Users, CheckCircle2, ArrowLeft, ArrowRight, Search, TrendingUp, Clock3, Music2, ClipboardCheck} from 'lucide-react';
 import React,{useState,useEffect} from 'react';
 import {fetchClassPanel,saveClassRegister} from './api.mjs';
@@ -6,14 +9,15 @@ import {today,addDays,fullName,dateLabel,normalize,canEdit,editDays} from './dom
 export function ClassParticipation({profile,data}){
  const [classId,setClass]=useState(profile.class_id||data.classes.find(c=>c.kind!=='Local')?.id||''),[panel,setPanel]=useState(null),[error,setError]=useState(''),[tab,setTab]=useState('events'),[selected,setSelected]=useState(null),[ids,setIds]=useState([]),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[search,setSearch]=useState('');
  const [followSearch,setFollowSearch]=useState('');
+ const [genderFilter,setGenderFilter]=useState('all');
  const [month,setMonth]=useState(today().slice(0,7));
  const [from,setFrom]=useState(today().slice(0,4)+'-01-01'),[to,setTo]=useState(today()),[type,setType]=useState('visita'),[group,setGroup]=useState('Todos'),[threshold,setThreshold]=useState(21);
  const reload=async()=>{const x=await fetchClassPanel(classId);setPanel(x);return x;};
  useEffect(()=>{let active=true;setPanel(null);setError('');fetchClassPanel(classId).then(x=>active&&setPanel(x)).catch(e=>active&&setError(e.message));return()=>{active=false};},[classId]);
  useEffect(()=>{if(!dirty)return;const f=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',f);return()=>window.removeEventListener('beforeunload',f);},[dirty]);
  const discard=()=>!dirty||window.confirm('Hay cambios sin guardar. ¿Descartarlos?');
- const open=(e,m)=>{if(!discard())return;const r=panel.registers.find(r=>r.event_id===e.id&&r.moment===m);setSelected({event:e,moment:m,version:r?.version||0});setIds(r?.ids||[]);setDirty(false);setMessage('');setSearch('');};
- const save=async()=>{setBusy(true);setError('');try{await saveClassRegister(classId,selected.event.id,selected.moment,ids,selected.version);const x=await reload();const r=x.registers.find(r=>r.event_id===selected.event.id&&r.moment===selected.moment);setSelected({...selected,version:r.version});setDirty(false);setMessage('Asistencia de la clase guardada. El total de Secretaría no cambió.');}catch(e){setError(e.message)}finally{setBusy(false)}};
+ const open=(e,m)=>{if(!discard())return;const r=panel.registers.find(r=>r.event_id===e.id&&r.moment===m);setSelected({event:e,moment:m,version:r?.version||0,baseIds:r?.ids||[]});setGenderFilter('all');setIds(r?.ids||[]);setDirty(false);setMessage('');setSearch('');};
+ const save=async()=>{setBusy(true);setError('');try{const latest=await fetchClassPanel(classId);const previous=latest.registers.find(r=>r.event_id===selected.event.id&&r.moment===selected.moment);const merged=mergeAttendanceSelection(selected.baseIds,ids,previous?.ids||[]);await saveClassRegister(classId,selected.event.id,selected.moment,merged,previous?.version||0);const x=await reload();const r=x.registers.find(r=>r.event_id===selected.event.id&&r.moment===selected.moment);setSelected({...selected,version:r.version,baseIds:r.ids});setIds(r.ids);setDirty(false);setMessage('Asistencia de la clase guardada. El total de Secretaría no cambió.');}catch(e){setError(e.message+' Tus marcas siguen aquí. Vuelve a guardar para incorporar los cambios recientes.')}finally{setBusy(false)}};
  const history=(panel?.history||[]).filter(v=>v.type===type&&v.date>=from&&v.date<=to&&(group==='Todos'||v.group===group)).sort((a,b)=>b.date.localeCompare(a.date));
 
  const activePeople=(panel?.people||[]).filter(p=>p.active&&p.current!==false&&!p.merged_into);
@@ -21,7 +25,7 @@ export function ClassParticipation({profile,data}){
  const rows=activePeople.map(p=>{const all=panel.history.filter(v=>v.type===type&&v.date<=to&&(group==='Todos'||v.group===group)&&v.ids.includes(p.id)).map(v=>v.date).sort();const last=all.at(-1);return {...p,count:history.filter(v=>v.ids.includes(p.id)).length,last,away:!!last&&last<addDays(to,-threshold),returned:all.some((d,i)=>i&&d>=from&&(Date.parse(d)-Date.parse(all[i-1]))/86400000>threshold)};}).sort((a,b)=>b.count-a.count||fullName(a).localeCompare(fullName(b),'es'));
  const shown=rows.filter(p=>normalize(fullName(p)).includes(normalize(followSearch)));
  const events=(panel?.events||[]).filter(e=>e.date.startsWith(month)).sort((a,b)=>b.date.localeCompare(a.date));
- const roster=activePeople.filter(p=>normalize(fullName(p)).includes(normalize(search)));
+ const roster=activePeople.filter(p=>matchesAttendanceGender(p,genderFilter)&&normalize(fullName(p)).includes(normalize(search)));
  const editable=selected&&canEdit(selected.event,profile);
  const switchTab=value=>{if(discard()){setTab(value);setSelected(null);setDirty(false);setMessage('')}};
  const initials=p=>[p.first_name?.[0],p.last_name?.[0]].join('');
@@ -36,9 +40,9 @@ export function ClassParticipation({profile,data}){
  {!events.length&&<div className="cp-empty"><CalendarDays size={32}/><h3>Sin encuentros en este mes</h3><p>Prueba con otro mes. Aquí aparecen los encuentros publicados.</p></div>}</>}
  {panel&&selected&&<><button className="cp-back" disabled={busy} onClick={()=>{if(discard()){setSelected(null);setDirty(false);setMessage('')}}}><ArrowLeft size={18}/>Volver a los encuentros</button>
  <div className="cp-section-head"><div><span className="cp-eyebrow">{dateLabel(selected.event.date)}</span><h3>{selected.moment==='punto'?'Punto de predicación':'Servicio de la tarde'}</h3><p>{selected.event.title}</p></div><span className="cp-count"><Users size={20}/><b>{ids.length}</b> presentes</span></div>
- <p className="cp-notice">Se muestran solo participantes activos de tu clase. Marca a quienes asistieron y luego guarda. El total de Secretaría se mantiene independiente.</p>
+ <p className="cp-notice">Se muestran solo participantes activos de tu clase. Un toque marca; otro toque desmarca. Después guarda la asistencia. El filtro solo cambia el listado y conserva las otras marcas. El total de Secretaría se mantiene independiente.</p>
  {!editable&&<p className="cp-notice">Solo lectura: fecha futura o fuera del plazo de {editDays(profile)} días.</p>}
- {ids.some(id=>!activeIds.has(id))&&<p className="cp-notice">Este registro conserva {ids.filter(id=>!activeIds.has(id)).length} asistencia(s) histórica(s) de personas que ya no están activas en la clase. No se borrarán al guardar.</p>}<div className="cp-card"><div className="cp-card-head"><div><h3>Lista de participantes</h3><p>{roster.length} personas en esta búsqueda</p></div><label className="cp-search"><Search size={18}/><input aria-label="Buscar participante" placeholder="Buscar por nombre" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
+ {ids.some(id=>!activeIds.has(id))&&<p className="cp-notice">Este registro conserva {ids.filter(id=>!activeIds.has(id)).length} asistencia(s) histórica(s) de personas que ya no están activas en la clase. No se borrarán al guardar.</p>}<div className="cp-card"><div className="cp-card-head"><div><h3>Lista de participantes</h3><p>{roster.length} personas en este filtro</p></div><AttendanceGenderFilter value={genderFilter} onChange={setGenderFilter}/><label className="cp-search"><Search size={18}/><input aria-label="Buscar participante" placeholder="Buscar por nombre" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
  <div className="cp-roster">{roster.map(p=><label key={p.id} className={'cp-person '+(ids.includes(p.id)?'is-present':'')}><span className="cp-avatar">{initials(p)}</span><span className="cp-person-name"><strong>{fullName(p)}</strong><small>{p.category}</small></span><span className="cp-check"><span>{ids.includes(p.id)?'Presente':'Marcar'}</span><input aria-label={'Asistencia de '+fullName(p)} type="checkbox" disabled={busy||!editable} checked={ids.includes(p.id)} onChange={e=>{setIds(e.target.checked?[...ids,p.id]:ids.filter(id=>id!==p.id));setDirty(true);setMessage('')}}/></span></label>)}</div>{!roster.length&&<div className="cp-empty">No encontramos participantes con ese nombre.</div>}</div>
  <div className="cp-savebar"><div><strong>{ids.length} presentes de mi clase</strong><span>{dirty?'Cambios sin guardar':'Sin cambios pendientes'}</span></div><button className="button primary" disabled={busy||!editable} onClick={save}><CheckCircle2 size={18}/>{busy?'Guardando…':'Guardar asistencia de mi clase'}</button></div></>}
  {panel&&tab==='history'&&!profile.attendance_only&&<>

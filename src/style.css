@@ -88,3 +88,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{min-width:0}input,
 
 /* V3.5: filtros legibles en móviles y con texto ampliado. */
 @media(max-width:760px){.attendance-filters>.roster-filter{flex:1 0 100%;max-width:100%}.attendance-filters input,.attendance-filters select{font-size:1rem}.attendance-filters>select:not(.roster-filter){flex:1 1 180px}.list-subhead>div{flex-wrap:wrap}}
+
+/* Filtro compartido en todas las listas de asistencia. */
+.attendance-gender-filter{display:flex;flex-direction:column;gap:6px;min-width:150px;font-size:12px;color:var(--muted);font-weight:600}.attendance-gender-filter select{width:100%;font-weight:400;color:var(--ink)}.attendance-filters{flex-wrap:wrap;align-items:flex-end;gap:12px}.attendance-filters>.search-box{flex:1 1 250px}.attendance-filters>select{min-width:150px;max-width:100%}.cp-card-head .attendance-gender-filter{flex:0 1 170px}@media(max-width:760px){.attendance-filters>.attendance-gender-filter,.cp-card-head .attendance-gender-filter{width:100%;flex:1 1 100%;min-width:0}.attendance-filters>.search-box{flex-basis:100%}.attendance-gender-filter select{font-size:16px;min-height:46px}}

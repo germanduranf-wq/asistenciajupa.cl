@@ -12,3 +12,12 @@ export function effectiveMarks(marks,draft){
  return [...map.values()];
 }
 export const draftConflicts=(marks,draft)=>Object.values(draft).filter(c=>(marks.find(a=>a.person_id===c.person_id)?.version||0)!==c.version);
+
+// Aplicar solo los cambios locales al último registro completo de la clase.
+// Los filtros no deben borrar marcas ocultas ni las guardadas por otra cuenta.
+export function mergeAttendanceSelection(baseIds,selectedIds,latestIds){
+ const base=new Set(baseIds),selected=new Set(selectedIds),result=new Set(latestIds);
+ for(const id of base)if(!selected.has(id))result.delete(id);
+ for(const id of selected)if(!base.has(id))result.add(id);
+ return [...result];
+}
